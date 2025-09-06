@@ -160,80 +160,6 @@ void drawCuboid(float width, float height, float depth)
 	glEnd();
 }
 
-// This function draws the torso with more segments for a smoother, curvier look.
-void drawTorso3D()
-{
-	glColor3f(1.0f, 0.84f, 0.0f); // Golden yellow color
-	float bodyDepth = 0.3f; // INCREASED: Overall depth of the torso
-	float d = bodyDepth / 2.0f;
-
-	// Define vertices for the torso outline (front face)
-	// We will mirror these for the back and connect them for the sides
-	// Each vertex needs its own normal for smooth shading
-
-	// A utility to get a vertex coordinate more easily
-#define V_FRONT(x, y) glVertex3f(x, y, d)
-#define V_BACK(x, y)  glVertex3f(x, y, -d)
-
-// Vertices to define the smooth curves of the torso (Y-coordinates: top to bottom)
-// X values define the width at each Y level.
-// The sketch has a very defined chest, then a narrow waist, then wider hips.
-	float chestTopX = 0.35f;
-	float chestMidY = 0.6f;
-	float chestMidX = 0.28f; // Slightly narrower than top
-	float waistY = 0.1f;
-	float waistX = 0.1f;    // Very narrow waist
-	float hipMidY = -0.4f;
-	float hipMidX = 0.3f;   // Wider hips
-	float hipBottomY = -0.8f;
-	float hipBottomX = 0.4f; // Widest at bottom of hips
-
-	// --- Torso Segments (Top to Bottom) ---
-	glBegin(GL_QUADS);
-	// --- Front Faces ---
-	glNormal3f(0.0f, 0.0f, 1.0f); // General normal for front
-	// Top chest segment
-	V_FRONT(-chestTopX, 0.8f); V_FRONT(chestTopX, 0.8f); V_FRONT(chestMidX, chestMidY); V_FRONT(-chestMidX, chestMidY);
-	// Middle chest to waist segment
-	V_FRONT(-chestMidX, chestMidY); V_FRONT(chestMidX, chestMidY); V_FRONT(waistX, waistY); V_FRONT(-waistX, waistY);
-	// Waist to hip segment
-	V_FRONT(-waistX, waistY); V_FRONT(waistX, waistY); V_FRONT(hipMidX, hipMidY); V_FRONT(-hipMidX, hipMidY);
-	// Hip to bottom segment
-	V_FRONT(-hipMidX, hipMidY); V_FRONT(hipMidX, hipMidY); V_FRONT(hipBottomX, hipBottomY); V_FRONT(-hipBottomX, hipBottomY);
-
-	// --- Back Faces --- (vertices in reverse order for correct normal)
-	glNormal3f(0.0f, 0.0f, -1.0f); // General normal for back
-	V_BACK(-chestTopX, 0.8f); V_BACK(-chestMidX, chestMidY); V_BACK(chestMidX, chestMidY); V_BACK(chestTopX, 0.8f);
-	V_BACK(-chestMidX, chestMidY); V_BACK(-waistX, waistY); V_BACK(waistX, waistY); V_BACK(chestMidX, chestMidY);
-	V_BACK(-waistX, waistY); V_BACK(-hipMidX, hipMidY); V_BACK(hipMidX, hipMidY); V_BACK(waistX, waistY);
-	V_BACK(-hipMidX, hipMidY); V_BACK(-hipBottomX, hipBottomY); V_BACK(hipBottomX, hipBottomY); V_BACK(hipMidX, hipMidY);
-
-	// --- Side Faces --- (connect front and back)
-	// Top cap
-	glNormal3f(0.0f, 1.0f, 0.0f); // Normal pointing up
-	V_FRONT(-chestTopX, 0.8f); V_BACK(-chestTopX, 0.8f); V_BACK(chestTopX, 0.8f); V_FRONT(chestTopX, 0.8f);
-
-	// Left Side Segments (normals point left, slightly outwards for curve)
-	glNormal3f(-1.0f, 0.0f, 0.0f); V_FRONT(-chestTopX, 0.8f); V_FRONT(-chestMidX, chestMidY); V_BACK(-chestMidX, chestMidY); V_BACK(-chestTopX, 0.8f);
-	glNormal3f(-1.0f, 0.0f, 0.0f); V_FRONT(-chestMidX, chestMidY); V_FRONT(-waistX, waistY); V_BACK(-waistX, waistY); V_BACK(-chestMidX, chestMidY);
-	glNormal3f(-1.0f, 0.0f, 0.0f); V_FRONT(-waistX, waistY); V_FRONT(-hipMidX, hipMidY); V_BACK(-hipMidX, hipMidY); V_BACK(-waistX, waistY);
-	glNormal3f(-1.0f, 0.0f, 0.0f); V_FRONT(-hipMidX, hipMidY); V_FRONT(-hipBottomX, hipBottomY); V_BACK(-hipBottomX, hipBottomY); V_BACK(-hipMidX, hipMidY);
-
-	// Right Side Segments (normals point right, slightly outwards for curve)
-	glNormal3f(1.0f, 0.0f, 0.0f); V_FRONT(chestTopX, 0.8f); V_BACK(chestTopX, 0.8f); V_BACK(chestMidX, chestMidY); V_FRONT(chestMidX, chestMidY);
-	glNormal3f(1.0f, 0.0f, 0.0f); V_FRONT(chestMidX, chestMidY); V_BACK(chestMidX, chestMidY); V_BACK(waistX, waistY); V_FRONT(waistX, waistY);
-	glNormal3f(1.0f, 0.0f, 0.0f); V_FRONT(waistX, waistY); V_BACK(waistX, waistY); V_BACK(hipMidX, hipMidY); V_FRONT(hipMidX, hipMidY);
-	glNormal3f(1.0f, 0.0f, 0.0f); V_FRONT(hipMidX, hipMidY); V_BACK(hipMidX, hipMidY); V_BACK(hipBottomX, hipBottomY); V_FRONT(hipBottomX, hipBottomY);
-
-	// Bottom Cap
-	glNormal3f(0.0f, -1.0f, 0.0f); // Normal pointing down
-	V_FRONT(-hipBottomX, hipBottomY); V_BACK(-hipBottomX, hipBottomY); V_BACK(hipBottomX, hipBottomY); V_FRONT(hipBottomX, hipBottomY);
-	glEnd();
-
-#undef V_FRONT
-#undef V_BACK
-}
-
 // Draws the belt and buckle with better detail
 void drawBelt3D() {
 	// Belt Strap (thinner)
@@ -276,94 +202,18 @@ void drawBelt3D() {
 	glPopMatrix();
 }
 
-// Draws the neck as a trapezoidal prism, wider at the top,
-// to connect smoothly to the head (which will be added later).
-void drawNeck3D() {
-	glColor3f(1.0f, 0.84f, 0.0f); // Gold colour
-
-	float neckDepth = 0.2f; // Depth of the neck
-	float d = neckDepth / 2.0f;
-
-	glPushMatrix();
-	// Position the neck to sit on top of the torso
-	glTranslatef(0.0f, 0.85f, 0.0f); // Adjusted Y position to sit on the torso
-
-	glBegin(GL_QUADS);
-	// Define vertices for the neck. Wider at top, narrower at bottom.
-	// Y-coordinates: top_Y, bottom_Y
-	// X-coordinates: top_left_X, top_right_X, bottom_left_X, bottom_right_X
-
-	// Top of neck (where head would connect)
-	float topX_outer = 0.15f;
-	float topX_inner = 0.1f;
-	float topY = 0.2f;
-
-	// Bottom of neck (where it connects to torso)
-	float bottomX_outer = 0.1f;
-	float bottomX_inner = 0.05f;
-	float bottomY = 0.0f;
-
-	// Front Face
-	glNormal3f(0.0f, 0.0f, 1.0f); // Normal pointing forward
-	glVertex3f(-bottomX_outer, bottomY, d); // Bottom-left
-	glVertex3f(bottomX_outer, bottomY, d);  // Bottom-right
-	glVertex3f(topX_outer, topY, d);    // Top-right
-	glVertex3f(-topX_outer, topY, d);   // Top-left
-
-	// Back Face (reverse order of front vertices to ensure correct normal direction)
-	glNormal3f(0.0f, 0.0f, -1.0f); // Normal pointing backward
-	glVertex3f(-bottomX_outer, bottomY, -d);
-	glVertex3f(-topX_outer, topY, -d);
-	glVertex3f(topX_outer, topY, -d);
-	glVertex3f(bottomX_outer, bottomY, -d);
-
-	// Right Side Face
-	glNormal3f(1.0f, 0.0f, 0.0f); // Normal pointing right
-	glVertex3f(bottomX_outer, bottomY, d);
-	glVertex3f(bottomX_outer, bottomY, -d);
-	glVertex3f(topX_outer, topY, -d);
-	glVertex3f(topX_outer, topY, d);
-
-	// Left Side Face
-	glNormal3f(-1.0f, 0.0f, 0.0f); // Normal pointing left
-	glVertex3f(-bottomX_outer, bottomY, d);
-	glVertex3f(-topX_outer, topY, d);
-	glVertex3f(-topX_outer, topY, -d);
-	glVertex3f(-bottomX_outer, bottomY, -d);
-
-	// Top Face (horizontal)
-	glNormal3f(0.0f, 1.0f, 0.0f); // Normal pointing up
-	glVertex3f(-topX_outer, topY, d);
-	glVertex3f(topX_outer, topY, d);
-	glVertex3f(topX_outer, topY, -d);
-	glVertex3f(-topX_outer, topY, -d);
-
-	// Bottom Face (horizontal, connects to torso)
-	glNormal3f(0.0f, -1.0f, 0.0f); // Normal pointing down
-	glVertex3f(-bottomX_outer, bottomY, d);
-	glVertex3f(-bottomX_outer, bottomY, -d);
-	glVertex3f(bottomX_outer, bottomY, -d);
-	glVertex3f(bottomX_outer, bottomY, d);
-
-	glEnd();
-	glPopMatrix();
-}
-
-// Draws the shoulder pads as 3D prisms, more akin to the sketch
 void drawShoulderPads3D() {
 	glColor3f(0.9f, 0.7f, 0.1f); // Slightly different shade of gold
-	float padDepth = 0.25f; // How thick the pads are
+	float padDepth = 0.25f;
 	float d = padDepth / 2.0f;
 
 	// --- Left Shoulder Pad ---
 	glPushMatrix();
-	// Position further out and slightly lower to align with new torso
-	glTranslatef(-0.4f, 0.75f, 0.0f); // Adjusted Y and X position
+	// Adjusted Y and X position to integrate better with the new torso and arm positions.
+	glTranslatef(-0.45f, 0.73f, 0.0f); // WAS: -0.4f, 0.75f, 0.0f
 	glRotatef(10.0f, 0.0f, 0.0f, 1.0f); // Slight outward rotation
 
 	glBegin(GL_QUADS);
-	// Adjusted vertices for a wider, more angular pad
-	// Note: Vertices are defined relative to the current translated/rotated origin
 	float v[8][3] = {
 		{-0.3f, 0.2f, d}, {0.3f, 0.2f, d}, {0.4f, -0.1f, d}, {-0.4f, -0.1f, d}, // Front
 		{-0.3f, 0.2f, -d}, {0.3f, 0.2f, -d}, {0.4f, -0.1f, -d}, {-0.4f, -0.1f, -d} // Back
@@ -392,7 +242,7 @@ void drawShoulderPads3D() {
 
 	// --- Right Shoulder Pad ---
 	glPushMatrix();
-	glTranslatef(0.4f, 0.75f, 0.0f); // Adjusted Y and X position
+	glTranslatef(0.45f, 0.73f, 0.0f); // Adjusted Y and X position
 	glRotatef(-10.0f, 0.0f, 0.0f, 1.0f); // Slight outward rotation
 
 	glBegin(GL_QUADS);
@@ -413,51 +263,6 @@ void drawShoulderPads3D() {
 	glNormal3f(-0.7f, 0.3f, 0.0f);
 	glVertex3fv(v2[0]); glVertex3fv(v2[3]); glVertex3fv(v2[7]); glVertex3fv(v2[4]);
 	glEnd();
-	glPopMatrix();
-}
-
-// Draws the arms and hands
-void drawArms()
-{
-	glColor3f(1.0f, 0.84f, 0.0f); // Gold colour
-	float arm_depth = 0.15f; // Make arms a bit thicker
-
-	// Left Arm
-	glPushMatrix();
-	glTranslatef(-0.6f, 0.45f, 0.0f); // Position at left shoulder
-
-	// Upper arm
-	glPushMatrix();
-	glScalef(1.0f, 5.0f, 1.0f); // Make the cuboid long and thin
-	drawCuboid(0.1f, 0.1f, 0.1f);
-	glPopMatrix();
-
-	// Forearm
-	glPushMatrix();
-	glTranslatef(0.0f, -0.5f, 0.0f); // Move down
-	glScalef(1.0f, 4.0f, 1.0f);
-	drawCuboid(0.1f, 0.1f, 0.1f);
-	glPopMatrix();
-
-	glPopMatrix();
-
-	// Right Arm (similar logic)
-	glPushMatrix();
-	glTranslatef(0.6f, 0.45f, 0.0f); // Position at right shoulder
-
-	// Upper arm
-	glPushMatrix();
-	glScalef(1.0f, 5.0f, 1.0f);
-	drawCuboid(0.1f, 0.1f, 0.1f);
-	glPopMatrix();
-
-	// Forearm
-	glPushMatrix();
-	glTranslatef(0.0f, -0.5f, 0.0f);
-	glScalef(1.0f, 4.0f, 1.0f);
-	drawCuboid(0.1f, 0.1f, 0.1f);
-	glPopMatrix();
-
 	glPopMatrix();
 }
 
@@ -515,13 +320,145 @@ void drawHipGuards3D() {
 	glPopMatrix();
 }
 
+// A powerful helper function to create a smooth, revolved 3D object (a lathe).
+// It takes a 2D profile (an array of x,y points) and revolves it around the Y-axis.
+// - profile: An array of 2D points defining the shape's outline.
+// - num_points: The number of points in the profile array.
+// - sides: The number of radial segments. More sides = smoother circle.
+void drawLathedObject(float profile[][2], int num_points, int sides)
+{
+	// Loop through each segment of the profile line
+	for (int i = 0; i < num_points - 1; ++i)
+	{
+		// Use GL_TRIANGLE_STRIP for efficiency and smooth connections
+		glBegin(GL_TRIANGLE_STRIP);
+
+		// Loop through each side of the revolution
+		for (int j = 0; j <= sides; ++j)
+		{
+			float angle = (float)j / (float)sides * 2.0f * 3.14159f;
+			float x, z;
+
+			// --- Vertex at the current level (i) ---
+			x = profile[i][0] * cos(angle);
+			z = profile[i][0] * sin(angle);
+
+			// For a simple revolved shape, the normal points outwards from the Y-axis.
+			// We can add a Y component to the normal to account for the profile's slope
+			// for more accurate lighting, but this is a great start.
+			glNormal3f(cos(angle), 0.0f, sin(angle));
+			glVertex3f(x, profile[i][1], z);
+
+			// --- Vertex at the next level (i+1) ---
+			x = profile[i + 1][0] * cos(angle);
+			z = profile[i + 1][0] * sin(angle);
+
+			// The normal here should ideally be calculated based on the slope.
+			// For simplicity, we use a similar outward-pointing normal.
+			glNormal3f(cos(angle), 0.0f, sin(angle));
+			glVertex3f(x, profile[i + 1][1], z);
+		}
+		glEnd();
+	}
+}
+
+// Draws a smooth, curved torso using the lathe function.
+void drawSmoothTorso()
+{
+	glColor3f(1.0f, 0.84f, 0.0f); // Golden yellow
+
+	// Define the 2D profile for the torso's hourglass shape.
+	// Each pair is { X-radius, Y-height }.
+	float torso_profile[][2] = {
+		{0.18f, 0.85f},  // Top of torso (connects to neck)
+		{0.35f, 0.70f},  // Widest part of chest
+		{0.25f, 0.30f},  // Tapering towards waist
+		{0.15f, 0.10f},  // Narrowest part of waist
+		{0.20f, -0.1f},  // Start of hips
+		{0.38f, -0.5f},  // Widest part of hips
+		{0.35f, -0.8f}   // Bottom of torso
+	};
+	int torso_points = sizeof(torso_profile) / sizeof(torso_profile[0]);
+
+	// Generate the 3D model with 20 sides for a smooth look.
+	drawLathedObject(torso_profile, torso_points, 20);
+}
+
+// Draws a smooth, trapezoidal neck.
+void drawSmoothNeck()
+{
+	glColor3f(1.0f, 0.84f, 0.0f); // Golden yellow
+
+	// Profile for the neck: narrow at bottom, wide at top.
+	float neck_profile[][2] = {
+		{0.18f, 0.85f}, // Bottom of neck (matches torso top)
+		{0.25f, 1.05f}  // Top of neck
+	};
+	int neck_points = sizeof(neck_profile) / sizeof(neck_profile[0]);
+	drawLathedObject(neck_profile, neck_points, 16);
+}
+
+// Draws smooth, cylindrical arms.
+void drawSmoothArms()
+{
+	glColor3f(1.0f, 0.84f, 0.0f); // Golden yellow
+
+	// --- Left Arm ---
+	glPushMatrix();
+	glTranslatef(-0.6f, 0.8f, 0.0f); // Position the arm
+	glRotatef(10, 0, 0, 1); // Slight downward angle
+
+	// Profile for the upper arm
+	float upper_arm_profile[][2] = { {0.08f, 0.0f}, {0.08f, -0.5f} };
+	drawLathedObject(upper_arm_profile, 2, 12);
+
+	// Profile for the lower arm
+	glTranslatef(0.0f, -0.5f, 0.0f); // Move down
+	float lower_arm_profile[][2] = { {0.07f, 0.0f}, {0.07f, -0.4f} };
+	drawLathedObject(lower_arm_profile, 2, 12);
+
+	// Hand (simple cuboid for now)
+	glTranslatef(0.0f, -0.45f, 0.0f);
+	glScalef(0.16f, 0.1f, 0.16f);
+	drawCuboid(1, 1, 1);
+
+	glPopMatrix();
+
+	// --- Right Arm ---
+	glPushMatrix();
+	glTranslatef(0.6f, 0.8f, 0.0f);
+	glRotatef(-10, 0, 0, 1);
+	drawLathedObject(upper_arm_profile, 2, 12);
+	glTranslatef(0.0f, -0.5f, 0.0f);
+	drawLathedObject(lower_arm_profile, 2, 12);
+	glTranslatef(0.0f, -0.45f, 0.0f);
+	glScalef(0.16f, 0.1f, 0.16f);
+	drawCuboid(1, 1, 1);
+	glPopMatrix();
+}
+
+// Draws the other parts using the old cuboid method for now,
+// as they are more angular. We can refine them later.
+void drawAngularParts()
+{
+	// --- Shoulder Pads ---
+	// (We reuse the old function as shoulder pads are angular, not round)
+	drawShoulderPads3D();
+
+	// --- Hip Guards ---
+	// (Reusing old function)
+	drawHipGuards3D();
+
+	// --- Belt & Buckle ---
+	// (Reusing old function, but we can make the belt smooth later if needed)
+	drawBelt3D();
+}
+
 // -- Main Display Function --
 
 void display()
 {
-	// Because rotateX and rotateY are now global,
-	// we must REMOVE the "static float" declarations from here.
-
+	// ... (no changes to the top part of display) ...
 	glClearColor(1.0, 1.0, 1.0, 0.0);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	glEnable(GL_DEPTH_TEST);
@@ -529,6 +466,8 @@ void display()
 	glEnable(GL_LIGHTING);
 	glEnable(GL_LIGHT0);
 	glEnable(GL_COLOR_MATERIAL);
+
+	// This is ESSENTIAL for the new smooth look.
 	glShadeModel(GL_SMOOTH);
 
 	GLfloat light_pos[] = { 5.0f, 5.0f, 5.0f, 1.0f };
@@ -545,26 +484,16 @@ void display()
 	glLoadIdentity();
 
 	glTranslatef(0.0f, -0.5f, -5.0f);
-
-	// The rotation angles are now controlled by the mouse via the global variables.
 	glRotatef(rotateX, 1.0f, 0.0f, 0.0f);
 	glRotatef(rotateY, 0.0f, 1.0f, 0.0f);
 
-	// --- DRAWING FUNCTIONS ---
-	drawTorso3D();
-	drawBelt3D();
-	drawNeck3D();
-	drawShoulderPads3D();
-	drawArms();
-	drawHipGuards3D();
+	// --- CALL THE NEW SMOOTH DRAWING FUNCTIONS ---
+	drawSmoothTorso();
+	drawSmoothNeck();
+	drawSmoothArms();
 
-	// --- (START) REMOVE AUTOMATIC ROTATION ---
-	// The following lines that made the model spin automatically are now deleted.
-	// rotateY += 0.1f; 
-	// if (rotateY > 360.0f) {
-	//     rotateY -= 360.0f;
-	// }
-	// --- (END) REMOVE AUTOMATIC ROTATION ---
+	// Call a function for the remaining angular parts.
+	drawAngularParts();
 
 	glDisable(GL_LIGHTING);
 }
