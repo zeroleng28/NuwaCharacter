@@ -423,6 +423,7 @@ void display()
     glEnable(GL_LIGHTING);
     glEnable(GL_LIGHT0);
     glEnable(GL_COLOR_MATERIAL);
+    glShadeModel(GL_SMOOTH);
 
     GLfloat light_pos[] = { 5.0f, 5.0f, 5.0f, 1.0f };
     glLightfv(GL_LIGHT0, GL_POSITION, light_pos);
