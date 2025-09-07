@@ -160,48 +160,6 @@ void drawCuboid(float width, float height, float depth)
 	glEnd();
 }
 
-// Draws the belt and buckle with better detail
-void drawBelt3D() {
-	// Belt Strap (thinner)
-	glColor3f(0.8f, 0.6f, 0.2f); // Darker gold for the belt
-	glPushMatrix();
-	glTranslatef(0.0f, -0.05f, 0.0f); // Adjust position slightly down
-	glScalef(2.5f, 0.25f, 2.0f); // Thinner belt
-	drawCuboid(0.2f, 0.2f, 0.2f);
-	glPopMatrix();
-
-	// Buckle (more detailed triangle)
-	glColor3f(0.9f, 0.9f, 0.9f); // Lighter color for the buckle gem
-	float b_d = 0.05f; // Buckle depth
-	glPushMatrix();
-	glTranslatef(0.0f, 0.0f, 0.2f); // Position in front
-	glBegin(GL_TRIANGLES);
-	// Front face
-	glNormal3f(0.0f, 0.0f, 1.0f);
-	glVertex3f(0.0f, -0.12f, b_d);
-	glVertex3f(0.12f, 0.12f, b_d);
-	glVertex3f(-0.12f, 0.12f, b_d);
-	// Back face
-	glNormal3f(0.0f, 0.0f, -1.0f);
-	glVertex3f(0.0f, -0.12f, -b_d);
-	glVertex3f(-0.12f, 0.12f, -b_d);
-	glVertex3f(0.12f, 0.12f, -b_d);
-	// Side 1 (bottom-left)
-	glNormal3f(-0.8f, -0.6f, 0.0f);
-	glVertex3f(0.0f, -0.12f, b_d); glVertex3f(-0.12f, 0.12f, b_d);
-	glVertex3f(-0.12f, 0.12f, -b_d); glVertex3f(0.0f, -0.12f, -b_d);
-	// Side 2 (bottom-right)
-	glNormal3f(0.8f, -0.6f, 0.0f);
-	glVertex3f(0.0f, -0.12f, b_d); glVertex3f(0.0f, -0.12f, -b_d);
-	glVertex3f(0.12f, 0.12f, -b_d); glVertex3f(0.12f, 0.12f, b_d);
-	// Side 3 (top)
-	glNormal3f(0.0f, 1.0f, 0.0f);
-	glVertex3f(-0.12f, 0.12f, b_d); glVertex3f(0.12f, 0.12f, b_d);
-	glVertex3f(0.12f, 0.12f, -b_d); glVertex3f(-0.12f, 0.12f, -b_d);
-	glEnd();
-	glPopMatrix();
-}
-
 void drawShoulderPads3D() {
 	glColor3f(0.9f, 0.7f, 0.1f); // Slightly different shade of gold
 	float padDepth = 0.25f;
@@ -266,7 +224,6 @@ void drawShoulderPads3D() {
 	glPopMatrix();
 }
 
-// Draws the hip guards with a more angled and integrated design
 void drawHipGuards3D() {
 	glColor3f(0.8f, 0.6f, 0.2f); // Darker gold
 	float guardDepth = 0.2f;
@@ -327,75 +284,261 @@ void drawHipGuards3D() {
 // - sides: The number of radial segments. More sides = smoother circle.
 void drawLathedObject(float profile[][2], int num_points, int sides)
 {
+	// Define a small epsilon for normal calculation to avoid division by zero.
+	float EPSILON = 0.0001f;
+
 	// Loop through each segment of the profile line
 	for (int i = 0; i < num_points - 1; ++i)
 	{
-		// Use GL_TRIANGLE_STRIP for efficiency and smooth connections
 		glBegin(GL_TRIANGLE_STRIP);
 
-		// Loop through each side of the revolution
 		for (int j = 0; j <= sides; ++j)
 		{
-			float angle = (float)j / (float)sides * 2.0f * 3.14159f;
-			float x, z;
+			float angle_rad = (float)j / (float)sides * 2.0f * 3.14159f;
+			float cos_angle = cos(angle_rad);
+			float sin_angle = sin(angle_rad);
+
+			// Calculate current normal more accurately for the profile slope
+			float dx = profile[i + 1][0] - profile[i][0];
+			float dy = profile[i + 1][1] - profile[i][1];
+
+			// If profile is perfectly vertical or horizontal, use default normal
+			float normal_x_profile = -dy; // Perpendicular to slope in 2D
+			float normal_y_profile = dx;
+
+			// Normalize the 2D normal component
+			float normal_len_2d = sqrt(normal_x_profile * normal_x_profile + normal_y_profile * normal_y_profile);
+			if (normal_len_2d > EPSILON) {
+				normal_x_profile /= normal_len_2d;
+				normal_y_profile /= normal_len_2d;
+			}
+			else {
+				normal_x_profile = 0.0f; // Default if slope is zero
+				normal_y_profile = 1.0f;
+			}
+
+			// Transform 2D normal to 3D normal, revolving it around Y-axis
+			float normal_x_3d = normal_x_profile * cos_angle;
+			float normal_z_3d = normal_x_profile * sin_angle;
 
 			// --- Vertex at the current level (i) ---
-			x = profile[i][0] * cos(angle);
-			z = profile[i][0] * sin(angle);
+			glVertex3f(profile[i][0] * cos_angle, profile[i][1], profile[i][0] * sin_angle);
+			glNormal3f(normal_x_3d, normal_y_profile, normal_z_3d);
 
-			// For a simple revolved shape, the normal points outwards from the Y-axis.
-			// We can add a Y component to the normal to account for the profile's slope
-			// for more accurate lighting, but this is a great start.
-			glNormal3f(cos(angle), 0.0f, sin(angle));
-			glVertex3f(x, profile[i][1], z);
 
 			// --- Vertex at the next level (i+1) ---
-			x = profile[i + 1][0] * cos(angle);
-			z = profile[i + 1][0] * sin(angle);
-
-			// The normal here should ideally be calculated based on the slope.
-			// For simplicity, we use a similar outward-pointing normal.
-			glNormal3f(cos(angle), 0.0f, sin(angle));
-			glVertex3f(x, profile[i + 1][1], z);
+			glVertex3f(profile[i + 1][0] * cos_angle, profile[i + 1][1], profile[i + 1][0] * sin_angle);
+			glNormal3f(normal_x_3d, normal_y_profile, normal_z_3d);
 		}
 		glEnd();
 	}
 }
 
-// Draws a smooth, curved torso using the lathe function.
-void drawSmoothTorso()
+// Draws the distinct, layered waist "lines" or armor segments as separate rings.
+void drawWaistLines()
+{
+	glColor3f(0.8f, 0.6f, 0.0f); // Darker gold for the waist segments
+
+	// These segments will be stacked vertically between the chest (ends at Y=0.25)
+	// and the lower waist (starts at Y=-0.05).
+	// Let's create 3-4 segments.
+
+	float current_y = 0.20f; // Starting Y position (below chest, above lower waist)
+	float segment_height = 0.06f; // Height of each segment
+	float segment_thickness = 0.03f; // Thickness of the armor ring
+	int sides = 18; // Smoothness of the ring
+
+	// We'll vary the radius slightly to follow the body's curve
+	float radii[][2] = { // {inner_radius, outer_radius} for each segment
+		{0.16f, 0.20f}, // Topmost segment (smaller, starts near chest base)
+		{0.14f, 0.18f},
+		{0.12f, 0.16f}, // Narrowest at center
+		{0.14f, 0.18f}  // Widening towards lower waist
+	};
+
+	for (int i = 0; i < 4; ++i) // Draw 4 segments
+	{
+		glPushMatrix();
+		glTranslatef(0.0f, current_y - i * (segment_height + 0.01f), 0.0f); // Position each segment down
+
+		float inner_r = radii[i][0];
+		float outer_r = radii[i][1];
+
+		// Draw the main ring (like a thick pipe)
+		glBegin(GL_QUAD_STRIP);
+		for (int j = 0; j <= sides; ++j)
+		{
+			float angle = (float)j / (float)sides * 2.0f * 3.14159f;
+			float cos_angle = cos(angle);
+			float sin_angle = sin(angle);
+
+			// Vertices for the outer edge of the strip
+			glNormal3f(cos_angle, 0.0f, sin_angle); // Normal points outwards
+			glVertex3f(outer_r * cos_angle, segment_height / 2.0f, outer_r * sin_angle);
+
+			// Vertices for the inner edge of the strip (this defines the thickness)
+			glNormal3f(cos_angle, 0.0f, sin_angle); // Normal points outwards (approx)
+			glVertex3f(inner_r * cos_angle, segment_height / 2.0f, inner_r * sin_angle);
+
+			glNormal3f(cos_angle, 0.0f, sin_angle);
+			glVertex3f(outer_r * cos_angle, -segment_height / 2.0f, outer_r * sin_angle);
+
+			glNormal3f(cos_angle, 0.0f, sin_angle);
+			glVertex3f(inner_r * cos_angle, -segment_height / 2.0f, inner_r * sin_angle);
+		}
+		glEnd();
+
+		// Optionally, draw top/bottom caps for a more solid look
+		// Top Cap (from inner_r to outer_r)
+		glBegin(GL_QUAD_STRIP);
+		glNormal3f(0.0f, 1.0f, 0.0f); // Normal points up
+		for (int j = 0; j <= sides; ++j) {
+			float angle = (float)j / (float)sides * 2.0f * 3.14159f;
+			glVertex3f(outer_r * cos(angle), segment_height / 2.0f, outer_r * sin(angle));
+			glVertex3f(inner_r * cos(angle), segment_height / 2.0f, inner_r * sin(angle));
+		}
+		glEnd();
+
+		// Bottom Cap (from outer_r to inner_r, reversed for normal)
+		glBegin(GL_QUAD_STRIP);
+		glNormal3f(0.0f, -1.0f, 0.0f); // Normal points down
+		for (int j = sides; j >= 0; --j) {
+			float angle = (float)j / (float)sides * 2.0f * 3.14159f;
+			glVertex3f(outer_r * cos(angle), -segment_height / 2.0f, outer_r * sin(angle));
+			glVertex3f(inner_r * cos(angle), -segment_height / 2.0f, inner_r * sin(angle));
+		}
+		glEnd();
+
+		glPopMatrix();
+	}
+}
+
+// Draws the smooth, curved CHEST section.
+void drawSmoothChest()
 {
 	glColor3f(1.0f, 0.84f, 0.0f); // Golden yellow
 
-	// Define the 2D profile for the torso's hourglass shape.
-	// Each pair is { X-radius, Y-height }.
-	float torso_profile[][2] = {
-		{0.18f, 0.85f},  // Top of torso (connects to neck)
+	// Profile for the CHEST section. It now ends above the waist.
+	float chest_profile[][2] = {
+		{0.18f, 0.85f},  // Top of chest (connects to neck)
 		{0.35f, 0.70f},  // Widest part of chest
-		{0.25f, 0.30f},  // Tapering towards waist
-		{0.15f, 0.10f},  // Narrowest part of waist
+		{0.38f, 0.55f},  // Fuller chest volume
+		{0.30f, 0.40f},  // Tapering towards bottom of chest
+		{0.25f, 0.25f}   // Bottom edge of chest, above the gap
+	};
+	int chest_points = sizeof(chest_profile) / sizeof(chest_profile[0]);
+
+	drawLathedObject(chest_profile, chest_points, 20);
+}
+
+// Draws the smooth, curved LOWER WAIST and HIPS section.
+void drawSmoothWaistLower()
+{
+	glColor3f(1.0f, 0.84f, 0.0f); // Golden yellow
+
+	// Profile for the LOWER WAIST and HIPS. Starts below the gap.
+	float waist_lower_profile[][2] = {
+		{0.18f, -0.05f}, // Top of lower waist (below the gap)
 		{0.20f, -0.1f},  // Start of hips
 		{0.38f, -0.5f},  // Widest part of hips
 		{0.35f, -0.8f}   // Bottom of torso
 	};
-	int torso_points = sizeof(torso_profile) / sizeof(torso_profile[0]);
+	int waist_lower_points = sizeof(waist_lower_profile) / sizeof(waist_lower_profile[0]);
 
-	// Generate the 3D model with 20 sides for a smooth look.
-	drawLathedObject(torso_profile, torso_points, 20);
+	drawLathedObject(waist_lower_profile, waist_lower_points, 20);
 }
 
-// Draws a smooth, trapezoidal neck.
+// Draws a smooth, cylindrical neck.
 void drawSmoothNeck()
 {
 	glColor3f(1.0f, 0.84f, 0.0f); // Golden yellow
 
-	// Profile for the neck: narrow at bottom, wide at top.
+	// Profile for the neck: narrower and shorter to allow space for the folded collar.
 	float neck_profile[][2] = {
-		{0.18f, 0.85f}, // Bottom of neck (matches torso top)
-		{0.25f, 1.05f}  // Top of neck
+		{0.18f, 0.85f}, // Bottom of neck (matches chest top)
+		{0.18f, 0.95f}  // Top of neck (shorter than before)
 	};
 	int neck_points = sizeof(neck_profile) / sizeof(neck_profile[0]);
 	drawLathedObject(neck_profile, neck_points, 16);
+}
+
+// Draws the collar around the neck with a layered, more refined look.
+void drawNeckCollar()
+{
+	glColor3f(0.8f, 0.6f, 0.0f); // Darker gold for the collar
+
+	glPushMatrix();
+	// Position the collar at the base of the neck, fitting closely.
+	// Neck's base Y is 0.85, top is 1.05. Collar should wrap around Y=0.9 to Y=1.0.
+	glTranslatef(0.0f, 0.95f, 0.0f); // Centered height of the collar
+
+	float base_inner_radius = 0.18f; // Inner radius at the bottom of the collar
+	float base_outer_radius = 0.23f; // Outer radius at the bottom of the collar
+	float top_inner_radius = 0.20f;  // Inner radius at the top of the collar (slightly wider)
+	float top_outer_radius = 0.26f;  // Outer radius at the top of the collar (slightly wider)
+	float collar_height = 0.10f;     // Total height of the collar
+	int sides = 20;                   // Smoothness of the ring
+
+	// Main body of the collar, slightly conical for a better fit
+	glBegin(GL_QUAD_STRIP);
+	for (int i = 0; i <= sides; ++i)
+	{
+		float angle = (float)i / (float)sides * 2.0f * 3.14159f;
+		float cos_angle = cos(angle);
+		float sin_angle = sin(angle);
+
+		// Bottom-outer vertex
+		glNormal3f(cos_angle, -0.2f, sin_angle); // Normal slightly angled downwards
+		glVertex3f(base_outer_radius * cos_angle, -collar_height / 2.0f, base_outer_radius * sin_angle);
+
+		// Bottom-inner vertex
+		glNormal3f(cos_angle, -0.2f, sin_angle);
+		glVertex3f(base_inner_radius * cos_angle, -collar_height / 2.0f, base_inner_radius * sin_angle);
+
+		// Top-outer vertex
+		glNormal3f(cos_angle, 0.2f, sin_angle); // Normal slightly angled upwards
+		glVertex3f(top_outer_radius * cos_angle, collar_height / 2.0f, top_outer_radius * sin_angle);
+
+		// Top-inner vertex
+		glNormal3f(cos_angle, 0.2f, sin_angle);
+		glVertex3f(top_inner_radius * cos_angle, collar_height / 2.0f, top_inner_radius * sin_angle);
+	}
+	glEnd();
+
+	// Now for the "layered" look, let's add a second, thinner ring on top.
+	glColor3f(0.9f, 0.7f, 0.1f); // Lighter gold for the top layer
+	float layer_height = 0.03f; // Height of this layer
+	float layer_offset_y = collar_height / 2.0f - layer_height / 2.0f + 0.01f; // Position slightly above main collar
+
+	glPushMatrix();
+	glTranslatef(0.0f, layer_offset_y, 0.0f); // Move up for the layer
+
+	float layer_inner_r = top_inner_radius - 0.01f; // Slightly smaller than top inner
+	float layer_outer_r = top_outer_radius + 0.01f; // Slightly larger than top outer
+
+	glBegin(GL_QUAD_STRIP);
+	for (int i = 0; i <= sides; ++i)
+	{
+		float angle = (float)i / (float)sides * 2.0f * 3.14159f;
+		float cos_angle = cos(angle);
+		float sin_angle = sin(angle);
+
+		glNormal3f(cos_angle, 0.0f, sin_angle);
+		glVertex3f(layer_outer_r * cos_angle, layer_height / 2.0f, layer_outer_r * sin_angle);
+		glNormal3f(cos_angle, 0.0f, sin_angle);
+		glVertex3f(layer_inner_r * cos_angle, layer_height / 2.0f, layer_inner_r * sin_angle);
+		glNormal3f(cos_angle, 0.0f, sin_angle);
+		glVertex3f(layer_outer_r * cos_angle, -layer_height / 2.0f, layer_outer_r * sin_angle);
+		glNormal3f(cos_angle, 0.0f, sin_angle);
+		glVertex3f(layer_inner_r * cos_angle, -layer_height / 2.0f, layer_inner_r * sin_angle);
+	}
+	glEnd();
+	glPopMatrix(); // Pop layer transform
+
+	glPopMatrix(); // Pop main collar transform
+
+	// Reset color to main body color if needed for subsequent parts
+	glColor3f(1.0f, 0.84f, 0.0f);
 }
 
 // Draws smooth, cylindrical arms.
@@ -405,7 +548,8 @@ void drawSmoothArms()
 
 	// --- Left Arm ---
 	glPushMatrix();
-	glTranslatef(-0.6f, 0.8f, 0.0f); // Position the arm
+	// Adjusted Y to connect to the bottom of the chest
+	glTranslatef(-0.6f, 0.6f, 0.0f); // WAS: -0.6f, 0.8f, 0.0f
 	glRotatef(10, 0, 0, 1); // Slight downward angle
 
 	// Profile for the upper arm
@@ -426,7 +570,8 @@ void drawSmoothArms()
 
 	// --- Right Arm ---
 	glPushMatrix();
-	glTranslatef(0.6f, 0.8f, 0.0f);
+	// Adjusted Y to connect to the bottom of the chest
+	glTranslatef(0.6f, 0.6f, 0.0f); // WAS: 0.6f, 0.8f, 0.0f
 	glRotatef(-10, 0, 0, 1);
 	drawLathedObject(upper_arm_profile, 2, 12);
 	glTranslatef(0.0f, -0.5f, 0.0f);
@@ -435,6 +580,263 @@ void drawSmoothArms()
 	glScalef(0.16f, 0.1f, 0.16f);
 	drawCuboid(1, 1, 1);
 	glPopMatrix();
+}
+
+// Draws the middle waist section WITH the vertical lines/grooves from the sketch.
+void drawWaistWithVerticalLines()
+{
+	// The waist connects the chest (ends at Y=0.25) and the lower waist (starts at Y=-0.05)
+	float waist_top_y = 0.25f;
+	float waist_bottom_y = -0.05f;
+
+	// Define the radius at the top and bottom of this waist section
+	float top_radius = 0.25f;  // Matches the bottom of the chest
+	float bottom_radius = 0.18f; // Matches the top of the lower waist/hips
+
+	int sides = 24; // Use more sides for a smoother curve and better line definition
+	int num_lines = 6; // We want 6 vertical lines as seen in some interpretations
+
+	glBegin(GL_QUADS);
+	for (int i = 0; i < sides; ++i)
+	{
+		float angle1 = (float)i / (float)sides * 2.0f * 3.14159f;
+		float angle2 = (float)(i + 1) / (float)sides * 2.0f * 3.14159f;
+
+		// Determine if this segment is a "line" or a "panel"
+		// We will make every few segments a recessed "line"
+		bool isLineSegment = (i % (sides / num_lines) == 0);
+
+		if (isLineSegment) {
+			glColor3f(0.8f, 0.6f, 0.0f); // Darker gold for the recessed "line"
+		}
+		else {
+			glColor3f(1.0f, 0.84f, 0.0f); // Standard golden yellow for the panels
+		}
+
+		// Calculate the four vertices of this vertical panel
+		// Top-left
+		float v1x = top_radius * cos(angle1);
+		float v1z = top_radius * sin(angle1);
+		// Top-right
+		float v2x = top_radius * cos(angle2);
+		float v2z = top_radius * sin(angle2);
+		// Bottom-right
+		float v3x = bottom_radius * cos(angle2);
+		float v3z = bottom_radius * sin(angle2);
+		// Bottom-left
+		float v4x = bottom_radius * cos(angle1);
+		float v4z = bottom_radius * sin(angle1);
+
+		// Calculate the normal for this panel. It points outwards from the center.
+		// We can approximate it by taking the average angle.
+		float avg_angle = (angle1 + angle2) / 2.0f;
+		glNormal3f(cos(avg_angle), 0.0f, sin(avg_angle));
+
+		// Draw the quad for this panel
+		glVertex3f(v1x, waist_top_y, v1z);
+		glVertex3f(v2x, waist_top_y, v2z);
+		glVertex3f(v3x, waist_bottom_y, v3z);
+		glVertex3f(v4x, waist_bottom_y, v4z);
+	}
+	glEnd();
+}
+
+// Draws the belt and buckle as a separate object, placed over the hips.
+void drawBeltAndBuckle()
+{
+	// The belt sits on top of the lower waist/hip section.
+	// Let's place it around Y = -0.7f
+	float belt_y = -0.7f;
+	float belt_radius_inner = 0.34f; // Should be slightly larger than the hip radius at that Y
+	float belt_radius_outer = 0.37f;
+	float belt_height = 0.08f;
+	int sides = 20;
+
+	// --- Belt Strap ---
+	glColor3f(0.8f, 0.6f, 0.2f); // Darker gold for the belt strap
+	glPushMatrix();
+	glTranslatef(0.0f, belt_y, 0.0f);
+
+	glBegin(GL_QUAD_STRIP);
+	glNormal3f(0.0f, 1.0f, 0.0f); // Top face normal
+	for (int i = 0; i <= sides; ++i) {
+		float angle = (float)i / (float)sides * 2.0f * 3.14159f;
+		glVertex3f(belt_radius_outer * cos(angle), belt_height / 2.0f, belt_radius_outer * sin(angle));
+		glVertex3f(belt_radius_inner * cos(angle), belt_height / 2.0f, belt_radius_inner * sin(angle));
+	}
+	glEnd();
+
+	glBegin(GL_QUAD_STRIP);
+	glNormal3f(0.0f, -1.0f, 0.0f); // Bottom face normal
+	for (int i = 0; i <= sides; ++i) {
+		float angle = (float)i / (float)sides * 2.0f * 3.14159f;
+		glVertex3f(belt_radius_outer * cos(angle), -belt_height / 2.0f, belt_radius_outer * sin(angle));
+		glVertex3f(belt_radius_inner * cos(angle), -belt_height / 2.0f, belt_radius_inner * sin(angle));
+	}
+	glEnd();
+
+	glBegin(GL_QUAD_STRIP);
+	for (int i = 0; i <= sides; ++i) {
+		float angle = (float)i / (float)sides * 2.0f * 3.14159f;
+		glNormal3f(cos(angle), 0.0f, sin(angle)); // Outer face normal
+		glVertex3f(belt_radius_outer * cos(angle), belt_height / 2.0f, belt_radius_outer * sin(angle));
+		glVertex3f(belt_radius_outer * cos(angle), -belt_height / 2.0f, belt_radius_outer * sin(angle));
+	}
+	glEnd();
+	glPopMatrix();
+
+
+	// --- Buckle ---
+	// This is the more detailed buckle. We are keeping this one.
+	glColor3f(0.9f, 0.9f, 0.9f); // Lighter color for the buckle gem
+	float b_d = 0.05f; // Buckle depth
+	glPushMatrix();
+	// Position buckle in front of the belt
+	glTranslatef(0.0f, belt_y, belt_radius_outer);
+
+	glBegin(GL_TRIANGLES);
+	// Front face
+	glNormal3f(0.0f, 0.0f, 1.0f);
+	glVertex3f(0.0f, -0.06f, b_d);
+	glVertex3f(0.08f, 0.08f, b_d);
+	glVertex3f(-0.08f, 0.08f, b_d);
+	glEnd();
+
+	glBegin(GL_QUADS);
+	// Slanted side faces of the triangular prism
+	glNormal3f(0.8f, 0.6f, 0.0f); // Right-top face normal
+	glVertex3f(0.08f, 0.08f, b_d); glVertex3f(0.0f, -0.06f, b_d);
+	glVertex3f(0.0f, -0.06f, -b_d); glVertex3f(0.08f, 0.08f, -b_d);
+
+	glNormal3f(-0.8f, 0.6f, 0.0f); // Left-top face normal
+	glVertex3f(-0.08f, 0.08f, b_d); glVertex3f(-0.08f, 0.08f, -b_d);
+	glVertex3f(0.0f, -0.06f, -b_d); glVertex3f(0.0f, -0.06f, b_d);
+
+	glNormal3f(0.0f, -1.0f, 0.0f); // Bottom face normal
+	glVertex3f(0.08f, 0.08f, b_d); glVertex3f(-0.08f, 0.08f, b_d);
+	glVertex3f(-0.08f, 0.08f, -b_d); glVertex3f(0.08f, 0.08f, -b_d);
+	glEnd();
+
+	glPopMatrix();
+}
+
+// Draws the folded collar around the neck, as seen in the sketch.
+void drawFoldedCollar()
+{
+	glColor3f(0.8f, 0.6f, 0.0f); // Darker gold for the collar
+
+	glPushMatrix();
+	// Position the collar slightly above the neck, starting from its base.
+	// Neck top is at Y=0.95f. Collar starts around Y=0.85f and goes up.
+	glTranslatef(0.0f, 0.85f, 0.0f);
+
+	float base_radius = 0.18f; // Radius at the base of the collar (around neck)
+	float top_radius = 0.25f;  // Wider radius at the top/outer edge of the collar
+	float collar_height = 0.15f; // Vertical extent of the collar
+	float collar_thickness = 0.02f; // How thick the collar material is
+	float front_overlap_z = 0.05f; // How much the front points overlap
+
+	// --- Left side of the folded collar ---
+	glBegin(GL_QUADS);
+	// Inner face (closer to neck)
+	glNormal3f(0.0f, 0.0f, -1.0f); // Normal points inwards (or slightly up/back)
+	glVertex3f(-base_radius, 0.0f, 0.0f);
+	glVertex3f(-base_radius * 0.9f, collar_height, 0.05f); // Pointing slightly up and forward
+	glVertex3f(0.0f, collar_height * 0.8f, base_radius + front_overlap_z); // Front point
+	glVertex3f(0.0f, 0.0f, base_radius * 0.8f);
+
+	// Outer face (top side of the fold)
+	glNormal3f(-0.5f, 0.5f, 0.5f); // Normal points up and out
+	glVertex3f(-base_radius - collar_thickness, 0.0f, 0.0f); // Base
+	glVertex3f(-top_radius, collar_height, 0.1f); // Outer top edge
+	glVertex3f(0.0f, collar_height * 0.9f, top_radius + front_overlap_z); // Outer front point
+	glVertex3f(0.0f, 0.0f, base_radius * 0.8f); // Connects to inner base
+
+	// Side face (connecting inner and outer) - simplified
+	glNormal3f(-1.0f, 0.0f, 0.0f);
+	glVertex3f(-base_radius, 0.0f, 0.0f);
+	glVertex3f(-base_radius - collar_thickness, 0.0f, 0.0f);
+	glVertex3f(-top_radius, collar_height, 0.1f);
+	glVertex3f(-base_radius * 0.9f, collar_height, 0.05f);
+
+	glEnd();
+
+	// --- Right side of the folded collar ---
+	// (Mirror the left side by negating X coordinates and adjusting normals)
+	glBegin(GL_QUADS);
+	// Inner face
+	glNormal3f(0.0f, 0.0f, -1.0f); // Normal points inwards
+	glVertex3f(base_radius, 0.0f, 0.0f);
+	glVertex3f(base_radius * 0.9f, collar_height, 0.05f);
+	glVertex3f(0.0f, collar_height * 0.8f, base_radius + front_overlap_z); // Front point
+	glVertex3f(0.0f, 0.0f, base_radius * 0.8f);
+
+	// Outer face
+	glNormal3f(0.5f, 0.5f, 0.5f); // Normal points up and out
+	glVertex3f(base_radius + collar_thickness, 0.0f, 0.0f); // Base
+	glVertex3f(top_radius, collar_height, 0.1f); // Outer top edge
+	glVertex3f(0.0f, collar_height * 0.9f, top_radius + front_overlap_z); // Outer front point
+	glVertex3f(0.0f, 0.0f, base_radius * 0.8f); // Connects to inner base
+
+	// Side face
+	glNormal3f(1.0f, 0.0f, 0.0f);
+	glVertex3f(base_radius, 0.0f, 0.0f);
+	glVertex3f(base_radius + collar_thickness, 0.0f, 0.0f);
+	glVertex3f(top_radius, collar_height, 0.1f);
+	glVertex3f(base_radius * 0.9f, collar_height, 0.05f);
+	glEnd();
+
+	glPopMatrix();
+
+	glColor3f(1.0f, 0.84f, 0.0f); // Reset color
+}
+
+// Draws the armor collar (gorget) with a layered design, as seen in the sketch.
+// This function replaces both the neck and the old collar functions.
+void drawArmorCollar()
+{
+	// --- Main, Lower Collar Plate ---
+	// This is the wider ring that rests on the chest.
+	glColor3f(0.8f, 0.6f, 0.0f); // Darker gold for the main collar
+
+	// Define the 2D cross-section profile of the lower ring.
+	// It's a wide, relatively flat shape.
+	// {X-radius, Y-height}
+	float lower_collar_profile[][2] = {
+		{0.20f, 0.85f}, // Inner edge, bottom
+		{0.38f, 0.88f}, // Outer edge, slightly higher
+		{0.38f, 0.84f}, // Outer edge, bottom (creates thickness)
+		{0.20f, 0.82f}  // Inner edge, bottom (creates thickness)
+	};
+	int lower_collar_points = sizeof(lower_collar_profile) / sizeof(lower_collar_profile[0]);
+
+	// Use the lathe function to create the smooth ring.
+	drawLathedObject(lower_collar_profile, lower_collar_points, 24);
+
+
+	// --- Inner, Upper Collar Ring ---
+	// This is the smaller, thinner ring that sits on top, closer to the neck.
+	glColor3f(0.9f, 0.7f, 0.1f); // Lighter gold for the inner ring
+
+	// Define the profile for the smaller, upper ring.
+	float upper_collar_profile[][2] = {
+		{0.18f, 0.88f}, // Inner edge, bottom
+		{0.24f, 0.90f}, // Outer edge, slightly higher
+		{0.24f, 0.87f}, // Outer edge, bottom
+		{0.18f, 0.86f}  // Inner edge, bottom
+	};
+	int upper_collar_points = sizeof(upper_collar_profile) / sizeof(upper_collar_profile[0]);
+
+	drawLathedObject(upper_collar_profile, upper_collar_points, 20);
+
+	// --- Simple Neck Cylinder inside the collar ---
+	// A simple, short neck piece to fill the gap.
+	glColor3f(1.0f, 0.84f, 0.0f); // Standard body color
+	float neck_profile[][2] = {
+		{0.17f, 0.88f}, // Base of the visible neck
+		{0.17f, 0.95f}  // Top of the visible neck
+	};
+	drawLathedObject(neck_profile, 2, 16);
 }
 
 // Draws the other parts using the old cuboid method for now,
@@ -448,31 +850,22 @@ void drawAngularParts()
 	// --- Hip Guards ---
 	// (Reusing old function)
 	drawHipGuards3D();
-
-	// --- Belt & Buckle ---
-	// (Reusing old function, but we can make the belt smooth later if needed)
-	drawBelt3D();
 }
 
 // -- Main Display Function --
-
 void display()
 {
-	// ... (no changes to the top part of display) ...
+	// --- Setup Code (unchanged) ---
 	glClearColor(1.0, 1.0, 1.0, 0.0);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	glEnable(GL_DEPTH_TEST);
-
 	glEnable(GL_LIGHTING);
 	glEnable(GL_LIGHT0);
 	glEnable(GL_COLOR_MATERIAL);
-
-	// This is ESSENTIAL for the new smooth look.
 	glShadeModel(GL_SMOOTH);
 
 	GLfloat light_pos[] = { 5.0f, 5.0f, 5.0f, 1.0f };
 	glLightfv(GL_LIGHT0, GL_POSITION, light_pos);
-
 	GLfloat ambient_light[] = { 0.3f, 0.3f, 0.3f, 1.0f };
 	glLightModelfv(GL_LIGHT_MODEL_AMBIENT, ambient_light);
 
@@ -487,15 +880,19 @@ void display()
 	glRotatef(rotateX, 1.0f, 0.0f, 0.0f);
 	glRotatef(rotateY, 0.0f, 1.0f, 0.0f);
 
-	// --- CALL THE NEW SMOOTH DRAWING FUNCTIONS ---
-	drawSmoothTorso();
-	drawSmoothNeck();
-	drawSmoothArms();
+	// --- Simplified and Corrected Drawing Calls ---
+	drawSmoothChest();
+	drawWaistWithVerticalLines();
+	drawSmoothWaistLower();
+	drawBeltAndBuckle();
 
-	// Call a function for the remaining angular parts.
+	drawArmorCollar(); // REPLACES the old neck and collar functions
+
+	drawSmoothArms();
 	drawAngularParts();
 
 	glDisable(GL_LIGHTING);
+	glDisable(GL_DEPTH_TEST);
 }
 
 //--------------------------------------------------------------------
