@@ -11,6 +11,7 @@
 // These variables will store the rotation angles.
 float rotateX = 15.0f;
 float rotateY = 0.0f;
+float zoomFactor = -5.0f; // Global variable for camera zoom
 
 // These variables will help us track the mouse movement.
 bool isDragging = false;
@@ -58,6 +59,23 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 		}
 		break;
 	}
+
+	case WM_MOUSEWHEEL:
+	{
+		int zDelta = GET_WHEEL_DELTA_WPARAM(wParam);
+		if (zDelta > 0)
+		{
+			zoomFactor += 0.5f;
+		}
+		else if (zDelta < 0)
+		{
+			zoomFactor -= 0.5f;
+		}
+		if (zoomFactor > -2.0f) zoomFactor = -2.0f;
+		if (zoomFactor < -20.0f) zoomFactor = -20.0f;
+		break;
+	}
+
 
 	default:
 		break;
@@ -319,113 +337,123 @@ void drawWaistWithVerticalLines()
 	glEnd();
 }
 
-// --- (MODIFIED) drawWaistBelt: Belt is now at the bottom of the thin waist and is wider ---
+// --- (MODIFIED) drawWaistBelt: Now draws the back half of the belt ---
 void drawWaistBelt()
 {
-	int sides = 40;
-	// --- (MODIFIED) Increased belt thickness for visibility ---
-	float belt_thickness = 0.06f; // WAS 0.04f
-
-	// Position the belt at the exact bottom of the thin waist segment.
-	float belt_y_position = -0.05f; // This is 'waist_bottom_y'
-	float belt_radius_at_position = 0.18f; // Matches 'bottom_radius' of vertical lines.
-
-	// --- Belt Strap ---
 	glColor3f(0.8f, 0.6f, 0.2f); // Darker gold for the belt strap
-	glPushMatrix();
-	glTranslatef(0.0f, belt_y_position, 0.0f); // Position at the calculated Y
 
+	// --- Define the geometry of the V-shaped belt ---
+	float belt_y_start = -0.05f;
+	float belt_y_end = -0.20f;
+	float belt_width = 0.1f;
+	int segments = 10; // Segments for EACH strap (front-right, front-left, back)
+	const float PI = 3.14159f;
+
+	float SURFACE_OFFSET = 0.02f;
+
+	float radius_at_y_start = 0.18f;
+	float radius_at_y_end = 0.22f;
+
+	// --- Draw Right Front Strap (V-shape) ---
 	glBegin(GL_QUAD_STRIP);
-	for (int i = 0; i <= sides; ++i) {
-		float angle = (float)i / (float)sides * 2.0f * 3.14159f;
-		float cos_a = cos(angle);
-		float sin_a = sin(angle);
+	for (int i = 0; i <= segments; i++) {
+		float t = (float)i / segments;
+		float current_y = belt_y_start + t * (belt_y_end - belt_y_start);
+		float current_radius = radius_at_y_start + t * (radius_at_y_end - radius_at_y_start);
+		float angle = t * (PI / 2.0f);
 
-		// Adjusted dip for style - more subtle in the Y direction
-		float dip_y_offset = -0.02f * (cos_a + 1.0f) / 2.0f; // Subtle dip at front
+		float x = cos(angle) * (current_radius + SURFACE_OFFSET);
+		float z = sin(angle) * (current_radius + SURFACE_OFFSET);
 
-		// Calculate outer and inner radii for the belt, making it wider at the front.
-		float current_outer_radius = belt_radius_at_position + belt_thickness;
-		float current_inner_radius = belt_radius_at_position - belt_thickness;
-
-		// Make the belt itself slightly wider at the front to emphasize the V-shape (radial width)
-		float radial_width_increase = 0.02f * (cos_a + 1.0f) / 2.0f;
-		current_outer_radius += radial_width_increase;
-		current_inner_radius -= radial_width_increase;
-
-
-		// Normal for outer surface (pointing outwards in XY plane)
-		glNormal3f(cos_a, 0.0f, sin_a);
-
-		// Vertices for the top and bottom edges of the outer and inner parts of the belt
-		// Outer top
-		glVertex3f(current_outer_radius * cos_a, belt_thickness / 2.0f + dip_y_offset, current_outer_radius * sin_a);
-		// Outer bottom
-		glVertex3f(current_outer_radius * cos_a, -belt_thickness / 2.0f + dip_y_offset, current_outer_radius * sin_a);
-		// Inner top
-		glVertex3f(current_inner_radius * cos_a, belt_thickness / 2.0f + dip_y_offset, current_inner_radius * sin_a);
-		// Inner bottom
-		glVertex3f(current_inner_radius * cos_a, -belt_thickness / 2.0f + dip_y_offset, current_inner_radius * sin_a);
+		glNormal3f(cos(angle), 0.2f, sin(angle));
+		glVertex3f(x, current_y + belt_width / 2.0f, z);
+		glVertex3f(x, current_y - belt_width / 2.0f, z);
 	}
 	glEnd();
-	glPopMatrix();
 
-	// --- Buckle ---
+	// --- Draw Left Front Strap (V-shape) ---
+	glBegin(GL_QUAD_STRIP);
+	for (int i = 0; i <= segments; i++) {
+		float t = (float)i / segments;
+		float current_y = belt_y_start + t * (belt_y_end - belt_y_start);
+		float current_radius = radius_at_y_start + t * (radius_at_y_end - radius_at_y_start);
+		float angle = PI - (t * (PI / 2.0f));
+
+		float x = cos(angle) * (current_radius + SURFACE_OFFSET);
+		float z = sin(angle) * (current_radius + SURFACE_OFFSET);
+
+		glNormal3f(cos(angle), 0.2f, sin(angle));
+		glVertex3f(x, current_y + belt_width / 2.0f, z);
+		glVertex3f(x, current_y - belt_width / 2.0f, z);
+	}
+	glEnd();
+
+	// --- (NEW) Draw the back half of the belt ---
+	glBegin(GL_QUAD_STRIP);
+	for (int i = 0; i <= segments; i++) {
+		float t = (float)i / segments;
+		// Angle from 180 (PI) to 360 (2*PI)
+		float angle = PI + t * PI;
+		float x = cos(angle) * (radius_at_y_start + SURFACE_OFFSET);
+		float z = sin(angle) * (radius_at_y_start + SURFACE_OFFSET);
+
+		glNormal3f(cos(angle), 0.0f, sin(angle));
+		// The Y position is constant for the back strap
+		glVertex3f(x, belt_y_start + belt_width / 2.0f, z);
+		glVertex3f(x, belt_y_start - belt_width / 2.0f, z);
+	}
+	glEnd();
+
+	// --- Buckle (only at the front) ---
 	glPushMatrix();
-	// Position the buckle at the front of the belt.
-	// We need to calculate the exact front-most point of the belt, considering its variable radius.
-	float front_belt_outer_radius_at_y = belt_radius_at_position + belt_thickness + 0.02f; // Max radial width at front (cos_a = 1)
-	glTranslatef(0.0f, belt_y_position - 0.02f, front_belt_outer_radius_at_y + 0.01f); // Slightly in front and adjusted Y for buckle dip
+	float t_mid = 0.5f;
+	float buckle_y = belt_y_start + t_mid * (belt_y_end - belt_y_start);
+	float radius_at_buckle = radius_at_y_start + t_mid * (radius_at_y_end - radius_at_y_start);
+	float buckle_z = radius_at_buckle + SURFACE_OFFSET + 0.02f;
+	glTranslatef(0.0f, buckle_y, buckle_z);
 
-	// Circular Buckle Housing
-	glColor3f(0.8f, 0.6f, 0.2f); // Darker gold
-	float buckle_outer_radius = 0.11f; // --- (MODIFIED) Made buckle larger --- WAS 0.09f
-	float buckle_inner_radius = 0.08f; // --- (MODIFIED) Made inner ring larger proportionally --- WAS 0.07f
-	float buckle_depth = 0.03f; // --- (MODIFIED) Made buckle deeper --- WAS 0.02f
+	glColor3f(0.8f, 0.6f, 0.2f);
+	float buckle_outer_radius = 0.11f;
+	float buckle_inner_radius = 0.08f;
+	float buckle_depth = 0.03f;
 
-	// Outer ring
 	glBegin(GL_QUAD_STRIP);
 	for (int i = 0; i <= 20; i++) {
-		float angle = (float)i / 20.0f * 2.0f * 3.14159f;
-		glNormal3f(cos(angle), sin(angle), 0.0f);
-		glVertex3f(buckle_outer_radius * cos(angle), buckle_outer_radius * sin(angle), buckle_depth / 2.0f);
-		glVertex3f(buckle_outer_radius * cos(angle), buckle_outer_radius * sin(angle), -buckle_depth / 2.0f);
+		float angle_buckle = (float)i / 20.0f * 2.0f * PI;
+		glNormal3f(cos(angle_buckle), sin(angle_buckle), 0.0f);
+		glVertex3f(buckle_outer_radius * cos(angle_buckle), buckle_outer_radius * sin(angle_buckle), buckle_depth / 2.0f);
+		glVertex3f(buckle_outer_radius * cos(angle_buckle), buckle_outer_radius * sin(angle_buckle), -buckle_depth / 2.0f);
 	}
 	glEnd();
-
-	// Inner ring (to make it look hollow)
 	glBegin(GL_QUAD_STRIP);
 	for (int i = 0; i <= 20; i++) {
-		float angle = (float)i / 20.0f * 2.0f * 3.14159f;
-		glNormal3f(-cos(angle), -sin(angle), 0.0f); // Inverted normal for inner surface
-		glVertex3f(buckle_inner_radius * cos(angle), buckle_inner_radius * sin(angle), -buckle_depth / 2.0f);
-		glVertex3f(buckle_inner_radius * cos(angle), buckle_inner_radius * sin(angle), buckle_depth / 2.0f);
+		float angle_buckle = (float)i / 20.0f * 2.0f * PI;
+		glNormal3f(-cos(angle_buckle), -sin(angle_buckle), 0.0f);
+		glVertex3f(buckle_inner_radius * cos(angle_buckle), buckle_inner_radius * sin(angle_buckle), -buckle_depth / 2.0f);
+		glVertex3f(buckle_inner_radius * cos(angle_buckle), buckle_inner_radius * sin(angle_buckle), buckle_depth / 2.0f);
 	}
 	glEnd();
-
-	// Front face of the buckle ring
 	glBegin(GL_QUAD_STRIP);
 	glNormal3f(0.0f, 0.0f, 1.0f);
 	for (int i = 0; i <= 20; i++) {
-		float angle = (float)i / 20.0f * 2.0f * 3.14159f;
-		glVertex3f(buckle_outer_radius * cos(angle), buckle_outer_radius * sin(angle), buckle_depth / 2.0f);
-		glVertex3f(buckle_inner_radius * cos(angle), buckle_inner_radius * sin(angle), buckle_depth / 2.0f);
+		float angle_buckle = (float)i / 20.0f * 2.0f * PI;
+		glVertex3f(buckle_outer_radius * cos(angle_buckle), buckle_outer_radius * sin(angle_buckle), buckle_depth / 2.0f);
+		glVertex3f(buckle_inner_radius * cos(angle_buckle), buckle_inner_radius * sin(angle_buckle), buckle_depth / 2.0f);
 	}
 	glEnd();
 
-	// Inner Triangle Gem (smaller and placed within the ring)
-	glColor3f(0.9f, 0.9f, 0.9f); // Light grey/silver
+	glColor3f(0.9f, 0.9f, 0.9f);
 	glPushMatrix();
-	glTranslatef(0.0f, 0.0f, buckle_depth / 2.0f + 0.005f); // Slightly in front of the buckle ring
+	glTranslatef(0.0f, 0.0f, buckle_depth / 2.0f + 0.005f);
 	glBegin(GL_TRIANGLES);
 	glNormal3f(0.0f, 0.0f, 1.0f);
-	glVertex3f(0.0f, buckle_inner_radius * 0.7f, 0.0f);
-	glVertex3f(buckle_inner_radius * 0.6f, -buckle_inner_radius * 0.5f, 0.0f);
-	glVertex3f(-buckle_inner_radius * 0.6f, -buckle_inner_radius * 0.5f, 0.0f);
+	glVertex3f(0.0f, -buckle_inner_radius * 0.7f, 0.0f);
+	glVertex3f(buckle_inner_radius * 0.6f, buckle_inner_radius * 0.5f, 0.0f);
+	glVertex3f(-buckle_inner_radius * 0.6f, buckle_inner_radius * 0.5f, 0.0f);
 	glEnd();
 	glPopMatrix();
 
-	glPopMatrix(); // Pop buckle transform
+	glPopMatrix();
 }
 
 void drawArmorCollar()
@@ -474,7 +502,8 @@ void display()
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 
-	glTranslatef(0.0f, -0.5f, -5.0f);
+	glTranslatef(0.0f, -0.5f, zoomFactor);
+
 	glRotatef(rotateX, 1.0f, 0.0f, 0.0f);
 	glRotatef(rotateY, 0.0f, 1.0f, 0.0f);
 
@@ -483,7 +512,11 @@ void display()
 	drawWaistWithVerticalLines();
 	drawSmoothLowerBodyAndSkirt();
 
-	drawWaistBelt(); // Belt is now at the correct, lower waist position and is wider
+	// Use glPolygonOffset to draw the belt on top of the skirt
+	glEnable(GL_POLYGON_OFFSET_FILL);
+	glPolygonOffset(-1.0f, -1.0f);
+	drawWaistBelt();
+	glDisable(GL_POLYGON_OFFSET_FILL);
 
 	drawArmorCollar();
 
