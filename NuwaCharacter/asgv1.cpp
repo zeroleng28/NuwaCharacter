@@ -340,7 +340,8 @@ void drawSmoothArms()
 	// --- Left Arm ---
 	// This block now uses the rotations from the original RIGHT arm.
 	glPushMatrix();
-	glTranslatef(-0.6f, 0.6f, 0.0f); // Stays on the left side of the body
+	// CHANGED: Raised the shoulder height from 0.6f to 0.7f to lift the hand.
+	glTranslatef(-0.6f, 0.7f, 0.0f); // Stays on the left side of the body
 
 	// Step 1: SHOULDER: Using original Right Arm's rotation
 	glRotatef(10.0f, 0.0f, 0.0f, 1.0f);
@@ -363,7 +364,8 @@ void drawSmoothArms()
 	// --- Right Arm ---
 	// This block now uses the rotations from the original LEFT arm.
 	glPushMatrix();
-	glTranslatef(0.6f, 0.6f, 0.0f); // Stays on the right side of the body
+	// CHANGED: Raised the shoulder height from 0.6f to 0.7f to lift the hand.
+	glTranslatef(0.6f, 0.7f, 0.0f); // Stays on the right side of the body
 
 	// Step 1: SHOULDER: Using original Left Arm's rotation
 	glRotatef(-10.0f, 0.0f, 0.0f, 1.0f);
