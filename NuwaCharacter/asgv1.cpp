@@ -2,11 +2,21 @@
 #include <gl/GL.h>
 #include <gl/GLU.h>
 #include <math.h>
+#include <vector>
 
 #pragma comment (lib, "OpenGL32.lib")
 #pragma comment (lib, "GLU32.lib")
 
 #define WINDOW_TITLE "OpenGL Window"
+
+// --- NEW variables for Delta Time calculation ---
+LARGE_INTEGER g_timer_frequency;
+LARGE_INTEGER g_last_frame_time;
+
+float g_rainbow_offset = 0.0f; // For halo animation
+
+HDC g_hDC = nullptr;   // global device context
+HGLRC g_hRC = nullptr; // global rendering context
 
 // These variables will store the rotation angles.
 float rotateX = 15.0f;
@@ -456,6 +466,7 @@ void drawWaistBelt()
 	glPopMatrix();
 }
 
+// --- Modified drawArmorCollar (REMOVE old neck part) ---
 void drawArmorCollar()
 {
 	glColor3f(0.8f, 0.6f, 0.0f);
@@ -472,16 +483,258 @@ void drawArmorCollar()
 	int upper_collar_points = sizeof(upper_collar_profile) / sizeof(upper_collar_profile[0]);
 	drawLathedObject(upper_collar_profile, upper_collar_points, 20);
 
-	glColor3f(1.0f, 0.84f, 0.0f);
-	float neck_profile[][2] = {
-		{0.17f, 0.88f}, {0.17f, 0.95f}
-	};
-	drawLathedObject(neck_profile, 2, 16);
+	// The old neck part is removed from here
+	// No more: glColor3f(1.0f, 0.84f, 0.0f); float neck_profile[][2] = {{0.17f, 0.88f}, {0.17f, 0.95f}}; drawLathedObject(neck_profile, 2, 16);
 }
 
-
-void display()
+// ----------------------------
+// Lathed Sphere (array version)
+// ----------------------------
+void drawSphere(float r, int slices, int stacks)
 {
+	const int MAX_STACKS = 50; // adjust if needed
+	float profile[MAX_STACKS + 1][2];
+
+	int count = 0;
+	for (int i = 0; i <= stacks; i++)
+	{
+		float theta = (float)i / stacks * 3.14159f; // 0 → PI
+		float y = r * cos(theta);
+		float x = r * sin(theta);
+		profile[count][0] = x;
+		profile[count][1] = y;
+		count++;
+	}
+
+	drawLathedObject(profile, count, slices);
+}
+
+// ----------------------------
+// Lathed Cone (array version)
+// ----------------------------
+void drawCone(float base, float height, int slices, int stacks)
+{
+	float profile[2][2] = {
+		{base, 0.0f},
+		{0.0f, height}
+	};
+	drawLathedObject(profile, 2, slices);
+}
+
+// --- UPDATED drawNeck function ---
+// This version has a lower position and a smoother, multi-point curve.
+void drawNeck()
+{
+	glColor3f(1.0f, 0.84f, 0.0f); // Golden yellow, same as body
+
+	// This multi-point profile creates a fully curved shape.
+	// The Y-values have been lowered to connect with the collar (from 0.95f down to 0.88f).
+	float neck_profile[][2] = {
+		{0.17f, 0.88f},  // Point 1: Base connection to the collar
+		{0.14f, 0.93f},  // Point 2: Start of the inward curve
+		{0.11f, 0.98f},  // Point 3: Thinnest part of the neck
+		{0.115f, 1.03f}, // Point 4: Start of the outward curve to the head
+		{0.12f, 1.08f}   // Point 5: Top connection to the head
+	};
+	int neck_points = sizeof(neck_profile) / sizeof(neck_profile[0]);
+
+	// Use the existing lathed object function to draw the new curved neck
+	drawLathedObject(neck_profile, neck_points, 20);
+}
+
+// ----------------------------
+// Head Decoration (halo + wings + crown spike)
+// ----------------------------
+void drawHeadDeco()
+{
+	glPushMatrix();
+	glTranslatef(0.0f, 1.20f, 0.0f);
+
+	// Halo arc (line strip)
+	glColor3f(1.0f, 0.84f, 0.0f);
+	float radius = 0.6f;
+	glBegin(GL_LINE_STRIP);
+	for (int i = 0; i <= 180; i += 5)
+	{
+		float angle = i * 3.14159f / 180.0f;
+		float x = radius * cos(angle);
+		float y = radius * sin(angle);
+		glVertex3f(x, y, 0.0f);
+	}
+	glEnd();
+
+	// Left wing
+	glPushMatrix();
+	glTranslatef(-0.6f, 0.2f, 0.0f);
+	glRotatef(20, 0, 0, 1);
+	glScalef(0.4f, 0.15f, 0.05f);
+	drawCuboid(1, 1, 0.2f);
+	glPopMatrix();
+
+	// Right wing
+	glPushMatrix();
+	glTranslatef(0.6f, 0.2f, 0.0f);
+	glRotatef(-20, 0, 0, 1);
+	glScalef(0.4f, 0.15f, 0.05f);
+	drawCuboid(1, 1, 0.2f);
+	glPopMatrix();
+
+	// Crown spike
+	glPushMatrix();
+	glTranslatef(0.0f, 0.6f, 0.0f);
+	glRotatef(-90, 1, 0, 0);
+	glColor3f(1.0f, 0.84f, 0.0f);
+	drawCone(0.4f, 1.0f, 32, 32);
+	glPopMatrix();
+
+	glPopMatrix();
+}
+
+// --- UPDATED function to draw the helmet piece ---
+// This now draws the triangle upside down.
+void drawHelmetVisor()
+{
+	glPushMatrix();
+
+	// Set up shiny material for the visor
+	GLfloat mat_ambient[] = { 0.8f, 0.7f, 0.1f, 1.0f };
+	GLfloat mat_diffuse[] = { 1.0f, 0.84f, 0.0f, 1.0f };
+	GLfloat mat_specular[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	GLfloat mat_shininess[] = { 128.0f };
+
+	glMaterialfv(GL_FRONT, GL_AMBIENT, mat_ambient);
+	glMaterialfv(GL_FRONT, GL_DIFFUSE, mat_diffuse);
+	glMaterialfv(GL_FRONT, GL_SPECULAR, mat_specular);
+	glMaterialfv(GL_FRONT, GL_SHININESS, mat_shininess);
+
+	// Define the triangle's vertices to control its size and shape.
+	float base_width = 0.15f;
+	float height = 0.55f;
+
+	glBegin(GL_TRIANGLES);
+	glNormal3f(0.0f, 0.0f, 1.0f);
+	// MODIFIED: Vertices for an upside-down (downward-pointing) triangle
+	glVertex3f(-base_width, 0.0f, 0.0f);   // Top-left vertex
+	glVertex3f(base_width, 0.0f, 0.0f);    // Top-right vertex
+	glVertex3f(0.0f, -height, 0.0f);       // Bottom-center tip
+	glEnd();
+
+	glPopMatrix();
+}
+
+// --- UPDATED function to draw the dynamic halo ---
+void drawHalo()
+{
+	glPushMatrix();
+
+	// MODIFIED: Changed Z-translation to -1.2f to make the gap 4 times larger.
+	// Original was -0.3f, 4 * -0.3f = -1.2f.
+	glTranslatef(0.0f, 1.5f, -0.5f);
+	glScalef(0.38f, 0.38f, 0.38f);
+
+	// --- 1. Draw the Gradient Gold Rings ---
+	glDisable(GL_LIGHTING);
+	glLineWidth(3.5f);
+	for (int j = 0; j < 2; j++) {
+		float radius = 1.0f + (j * 0.2f);
+		glBegin(GL_LINE_LOOP);
+		for (int i = 0; i <= 60; ++i) {
+			float angle = (float)i / 60.0f * 2.0f * 3.14159f;
+			float brightness = 0.7f + 0.3f * sin(angle * 4.0f + g_rainbow_offset);
+			glColor3f(1.0f * brightness, 0.84f * brightness, 0.1f * brightness);
+			glVertex3f(radius * cos(angle), radius * sin(angle), 0.0f);
+		}
+		glEnd();
+	}
+	glLineWidth(1.0f);
+
+	// --- 2. Draw the Dazzling Rainbow Glow Effect ---
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+	float inner_radius = 1.2f;
+	float outer_radius = 4.0f;
+
+	glBegin(GL_QUAD_STRIP);
+	for (int i = 0; i <= 60; i++) {
+		float angle = (float)i / 60.0f * 2.0f * 3.14159f;
+		float cos_a = cos(angle);
+		float sin_a = sin(angle);
+
+		float r = 0.5f * (1.0f + sin(g_rainbow_offset * 2.0f));
+		float g = 0.5f * (1.0f + sin(g_rainbow_offset * 2.0f + 2.0f));
+		float b = 0.5f * (1.0f + sin(g_rainbow_offset * 2.0f + 4.0f));
+
+		glColor4f(r, g, b, 0.35f);
+		glVertex3f(inner_radius * cos_a, inner_radius * sin_a, 0.0f);
+
+		glColor4f(r, g, b, 0.0f);
+		glVertex3f(outer_radius * cos_a, outer_radius * sin_a, 0.0f);
+	}
+	glEnd();
+
+	glDisable(GL_BLEND);
+
+	glPopMatrix();
+	glEnable(GL_LIGHTING);
+}
+
+// --- UPDATED drawFace function ---
+// This now positions the flipped visor higher on the face.
+void drawFace()
+{
+	glColor3f(1.0f, 0.84f, 0.0f);
+
+	glTranslatef(0.0f, 1.18f, 0.0f);
+
+	// --- Add the Helmet Visor ---
+	glPushMatrix();
+	// MODIFIED: Moved the visor higher up on the head (0.3f instead of 0.2f)
+	glTranslatef(0.0f, 0.28f, 0.28f);
+	drawHelmetVisor();
+	glPopMatrix();
+
+	// --- Main Head Shape ---
+	// ... (The rest of your drawFace function is unchanged) ...
+	int latitudes = 15;
+	int longitudes = 20;
+	float head_height = 0.5f;
+	float head_max_radius = 0.28f;
+	float head_base_radius = 0.10f;
+
+	for (int i = 0; i <= latitudes; ++i) {
+		float lat0 = 3.14159f * (-0.5f + (float)(i - 1) / latitudes);
+		float lat1 = 3.14159f * (-0.5f + (float)i / latitudes);
+		float y0 = sin(lat0) * head_height / 2.0f;
+		float y1 = sin(lat1) * head_height / 2.0f;
+		float r0 = cos(lat0) * head_max_radius;
+		float r1 = cos(lat1) * head_max_radius;
+		if (i == 0) r0 = head_base_radius;
+		if (i == 1) r0 = head_base_radius;
+		glBegin(GL_QUAD_STRIP);
+		for (int j = 0; j <= longitudes; ++j) {
+			float lng = 2.0f * 3.14159f * (float)j / longitudes;
+			float x = cos(lng);
+			float z = sin(lng);
+			float nx0 = cos(lat0) * x, ny0 = sin(lat0), nz0 = cos(lat0) * z;
+			glNormal3f(nx0, ny0, nz0);
+			glVertex3f(r0 * x, y0, r0 * z);
+			float nx1 = cos(lat1) * x, ny1 = sin(lat1), nz1 = cos(lat1) * z;
+			glNormal3f(nx1, ny1, nz1);
+			glVertex3f(r1 * x, y1, r1 * z);
+		}
+		glEnd();
+	}
+	glPopMatrix();
+}
+
+// --- UPDATED display function ---
+void display(float deltaTime)
+{
+	// Increment the global offset each frame to animate the halo colours
+	float animation_speed = 0.1f;
+	g_rainbow_offset += animation_speed * deltaTime;
+
 	glClearColor(1.0, 1.0, 1.0, 0.0);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	glEnable(GL_DEPTH_TEST);
@@ -512,42 +765,72 @@ void display()
 	drawWaistWithVerticalLines();
 	drawSmoothLowerBodyAndSkirt();
 
-	// Use glPolygonOffset to draw the belt on top of the skirt
 	glEnable(GL_POLYGON_OFFSET_FILL);
 	glPolygonOffset(-1.0f, -1.0f);
 	drawWaistBelt();
 	glDisable(GL_POLYGON_OFFSET_FILL);
 
 	drawArmorCollar();
-
 	drawSmoothArms();
 	drawShoulderPads3D();
 
-	glDisable(GL_LIGHTING);
-	glDisable(GL_DEPTH_TEST);
+	glPushMatrix();
+	drawNeck();
+	drawFace();
+	// Draw the halo after the face so it's positioned relative to the final head location
+	drawHalo();
+	glPopMatrix();
 }
+
+
 //--------------------------------------------------------------------
 
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow)
 {
+	// --- Register Window Class ---
 	WNDCLASSEX wc;
 	ZeroMemory(&wc, sizeof(WNDCLASSEX));
 	wc.cbSize = sizeof(WNDCLASSEX);
-	wc.hInstance = GetModuleHandle(NULL);
+	wc.hInstance = hInst;
 	wc.lpfnWndProc = WindowProcedure;
 	wc.lpszClassName = WINDOW_TITLE;
 	wc.style = CS_HREDRAW | CS_VREDRAW;
-	if (!RegisterClassEx(&wc)) return false;
-	HWND hWnd = CreateWindow(WINDOW_TITLE, WINDOW_TITLE, WS_OVERLAPPEDWINDOW,
+
+	if (!RegisterClassEx(&wc)) return -1;
+
+	// --- Create Window ---
+	HWND hWnd = CreateWindow(
+		WINDOW_TITLE, WINDOW_TITLE,
+		WS_OVERLAPPEDWINDOW, // <-- CORRECTED TYPO HERE
 		CW_USEDEFAULT, CW_USEDEFAULT, 800, 600,
-		NULL, NULL, wc.hInstance, NULL);
-	HDC hdc = GetDC(hWnd);
-	initPixelFormat(hdc);
-	HGLRC hglrc = wglCreateContext(hdc);
-	if (!wglMakeCurrent(hdc, hglrc)) return false;
+		NULL, NULL, hInst, NULL
+	);
+
+	if (!hWnd) return -1;
+
+	// --- Device Context (global) ---
+	g_hDC = GetDC(hWnd);
+	if (!g_hDC) return -1;
+
+	// --- Set Pixel Format ---
+	initPixelFormat(g_hDC);
+
+	// --- Rendering Context (global) ---
+	g_hRC = wglCreateContext(g_hDC);
+	if (!g_hRC) return -1;
+
+	if (!wglMakeCurrent(g_hDC, g_hRC)) return -1;
+
 	ShowWindow(hWnd, nCmdShow);
+
+	// --- Initialize the high-precision timer for delta time ---
+	QueryPerformanceFrequency(&g_timer_frequency);
+	QueryPerformanceCounter(&g_last_frame_time);
+
+	// --- Message Loop ---
 	MSG msg;
 	ZeroMemory(&msg, sizeof(msg));
+
 	while (true)
 	{
 		if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
@@ -556,9 +839,24 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow)
 			TranslateMessage(&msg);
 			DispatchMessage(&msg);
 		}
-		display();
-		SwapBuffers(hdc);
+
+		// --- Calculate Delta Time to ensure constant animation speed ---
+		LARGE_INTEGER current_frame_time;
+		QueryPerformanceCounter(&current_frame_time);
+		float deltaTime = (float)(current_frame_time.QuadPart - g_last_frame_time.QuadPart) / g_timer_frequency.QuadPart;
+		g_last_frame_time = current_frame_time;
+
+		// --- Render ---
+		display(deltaTime); // Pass delta time to the display function
+		SwapBuffers(g_hDC);
 	}
-	UnregisterClass(WINDOW_TITLE, wc.hInstance);
-	return true;
+
+	// --- Cleanup ---
+	wglMakeCurrent(NULL, NULL);
+	if (g_hRC) wglDeleteContext(g_hRC);
+	if (g_hDC) ReleaseDC(hWnd, g_hDC);
+	DestroyWindow(hWnd);
+	UnregisterClass(WINDOW_TITLE, hInst);
+
+	return static_cast<int>(msg.wParam);
 }
