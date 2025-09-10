@@ -194,7 +194,6 @@ void drawShoulderPads3D() {
 	glPopMatrix();
 }
 
-
 void drawLathedObject(float profile[][2], int num_points, int sides)
 {
 	float EPSILON = 0.0001f;
@@ -230,6 +229,76 @@ void drawLathedObject(float profile[][2], int num_points, int sides)
 	}
 }
 
+void drawHand(bool isLeftHand)
+{
+	glColor3f(1.0f, 0.84f, 0.0f); // Golden yellow
+
+	// --- 1. Draw the Palm ---
+	glPushMatrix();
+	// Position the palm correctly at the wrist
+	glTranslatef(0.0f, -0.05f, 0.0f);
+	glRotatef(10.0f, 1.0f, 0.0f, 0.0f); // Slight downward angle for the palm
+	// Draw a flattened cuboid for the palm (Width, Height, Depth)
+	drawCuboid(0.18f, 0.22f, 0.06f);
+	glPopMatrix();
+
+
+	// --- 2. Draw the Four Fingers ---
+	for (int i = 0; i < 4; i++)
+	{
+		glPushMatrix(); // Save the wrist's state
+
+		// --- Knuckle Placement ---
+		// Position each finger's knuckle on the bottom edge of the palm
+		float xPos = isLeftHand ? (-0.0675f + i * 0.045f) : (0.0675f - i * 0.045f);
+		glTranslatef(xPos, -0.15f, 0.01f);
+		// Base rotation for the whole finger to make it curl slightly
+		glRotatef(20.0f, 1.0f, 0.0f, 0.0f);
+
+		// --- Finger Segment 1 (Base) ---
+		float seg1_len = 0.07f;
+		glTranslatef(0.0f, -seg1_len / 2.0f, 0.0f); // Move to the center of the segment
+		drawCuboid(0.035f, seg1_len, 0.04f);      // Draw the segment
+
+		// --- Finger Segment 2 (Middle) ---
+		glTranslatef(0.0f, -seg1_len / 2.0f, 0.0f); // Move to the joint at the end of the first segment
+		glRotatef(25.0f, 1.0f, 0.0f, 0.0f);      // Rotate the joint
+		float seg2_len = 0.06f;
+		glTranslatef(0.0f, -seg2_len / 2.0f, 0.0f); // Move to the center of the second segment
+		drawCuboid(0.032f, seg2_len, 0.037f);     // Draw the segment
+
+		// --- Finger Segment 3 (Tip) ---
+		glTranslatef(0.0f, -seg2_len / 2.0f, 0.0f); // Move to the joint at the end of the second segment
+		glRotatef(25.0f, 1.0f, 0.0f, 0.0f);      // Rotate the joint
+		float seg3_len = 0.05f;
+		glTranslatef(0.0f, -seg3_len / 2.0f, 0.0f); // Move to the center of the third segment
+		drawCuboid(0.03f, seg3_len, 0.034f);      // Draw the segment
+
+		glPopMatrix(); // Restore to the wrist's state for the next finger
+	}
+
+	// --- 3. Draw the Thumb ---
+	glPushMatrix(); // Save the wrist's state
+
+	// Position the thumb's base on the side of the palm
+	glTranslatef(isLeftHand ? -0.1f : 0.1f, -0.08f, -0.01f);
+	glRotatef(isLeftHand ? 40.0f : -40.0f, 0.0f, 1.0f, 0.0f); // Rotate it outwards
+	glRotatef(30.0f, 0.0f, 0.0f, isLeftHand ? 1.0f : -1.0f); // Angle it across the palm
+
+	// --- Thumb Segment 1 (Base) ---
+	float thumb1_len = 0.06f;
+	glTranslatef(0.0f, -thumb1_len / 2.0f, 0.0f);
+	drawCuboid(0.04f, thumb1_len, 0.04f);
+
+	// --- Thumb Segment 2 (Tip) ---
+	glTranslatef(0.0f, -thumb1_len / 2.0f, 0.0f);
+	glRotatef(30.0f, 1.0f, 0.0f, 0.0f);
+	float thumb2_len = 0.05f;
+	glTranslatef(0.0f, -thumb2_len / 2.0f, 0.0f);
+	drawCuboid(0.037f, thumb2_len, 0.037f);
+
+	glPopMatrix(); // Restore to the wrist's state
+}
 
 void drawSmoothChest()
 {
@@ -244,7 +313,6 @@ void drawSmoothChest()
 	int chest_points = sizeof(chest_profile) / sizeof(chest_profile[0]);
 	drawLathedObject(chest_profile, chest_points, 20);
 }
-
 
 void drawSmoothLowerBodyAndSkirt()
 {
@@ -263,35 +331,56 @@ void drawSmoothLowerBodyAndSkirt()
 	drawLathedObject(lower_body_profile, lower_body_points, 24);
 }
 
-
 void drawSmoothArms()
 {
 	glColor3f(1.0f, 0.84f, 0.0f);
+	float upper_arm_profile[][2] = { {0.08f, 0.0f}, {0.08f, -0.5f} };
+	float lower_arm_profile[][2] = { {0.07f, 0.0f}, {0.07f, -0.4f} };
 
 	// --- Left Arm ---
+	// This block now uses the rotations from the original RIGHT arm.
 	glPushMatrix();
-	glTranslatef(-0.6f, 0.6f, 0.0f);
-	glRotatef(10, 0, 0, 1);
-	float upper_arm_profile[][2] = { {0.08f, 0.0f}, {0.08f, -0.5f} };
+	glTranslatef(-0.6f, 0.6f, 0.0f); // Stays on the left side of the body
+
+	// Step 1: SHOULDER: Using original Right Arm's rotation
+	glRotatef(10.0f, 0.0f, 0.0f, 1.0f);
+
 	drawLathedObject(upper_arm_profile, 2, 12);
 	glTranslatef(0.0f, -0.5f, 0.0f);
-	float lower_arm_profile[][2] = { {0.07f, 0.0f}, {0.07f, -0.4f} };
+
+	// Step 2: ELBOW: Using original Right Arm's rotation
+	glRotatef(25.0f, 1.0f, 0.0f, 0.0f);
+
 	drawLathedObject(lower_arm_profile, 2, 12);
-	glTranslatef(0.0f, -0.45f, 0.0f);
-	glScalef(0.16f, 0.1f, 0.16f);
-	drawCuboid(1, 1, 1);
+	glTranslatef(0.0f, -0.4f, 0.0f);
+
+	// Step 3: WRIST: Using original Right Arm's rotation
+	glRotatef(-70.0f, 0.0f, 1.0f, 0.0f);
+
+	drawHand(false); // Using original Right Arm's hand model (isLeftHand = false)
 	glPopMatrix();
 
 	// --- Right Arm ---
+	// This block now uses the rotations from the original LEFT arm.
 	glPushMatrix();
-	glTranslatef(0.6f, 0.6f, 0.0f);
-	glRotatef(-10, 0, 0, 1);
+	glTranslatef(0.6f, 0.6f, 0.0f); // Stays on the right side of the body
+
+	// Step 1: SHOULDER: Using original Left Arm's rotation
+	glRotatef(-10.0f, 0.0f, 0.0f, 1.0f);
+
 	drawLathedObject(upper_arm_profile, 2, 12);
 	glTranslatef(0.0f, -0.5f, 0.0f);
+
+	// Step 2: ELBOW: Using original Left Arm's rotation
+	glRotatef(25.0f, 1.0f, 0.0f, 0.0f);
+
 	drawLathedObject(lower_arm_profile, 2, 12);
-	glTranslatef(0.0f, -0.45f, 0.0f);
-	glScalef(0.16f, 0.1f, 0.16f);
-	drawCuboid(1, 1, 1);
+	glTranslatef(0.0f, -0.4f, 0.0f);
+
+	// Step 3: WRIST: Using original Left Arm's rotation
+	glRotatef(70.0f, 0.0f, 1.0f, 0.0f);
+
+	drawHand(true); // Using original Left Arm's hand model (isLeftHand = true)
 	glPopMatrix();
 }
 
@@ -337,7 +426,6 @@ void drawWaistWithVerticalLines()
 	glEnd();
 }
 
-// --- (MODIFIED) drawWaistBelt: Now draws the back half of the belt ---
 void drawWaistBelt()
 {
 	glColor3f(0.8f, 0.6f, 0.2f); // Darker gold for the belt strap
@@ -388,7 +476,7 @@ void drawWaistBelt()
 	}
 	glEnd();
 
-	// --- (NEW) Draw the back half of the belt ---
+	// --- Draw the back half of the belt ---
 	glBegin(GL_QUAD_STRIP);
 	for (int i = 0; i <= segments; i++) {
 		float t = (float)i / segments;
@@ -479,6 +567,94 @@ void drawArmorCollar()
 	drawLathedObject(neck_profile, 2, 16);
 }
 
+void drawBackSashes() {
+	const float PI = 3.14159f;
+	GLUquadric* quad = gluNewQuadric();
+
+	// --- Parameters for cloth shape and position ---
+	float base_sash_width = 0.18f;
+	float sash_length = 2.5f;
+	float flare_factor = 1.2f;
+	int   segments = 30;
+
+	// Anchor point on the belt
+	float belt_top_back_y = -0.05f;
+	float belt_back_radius = 0.18f;
+	float start_x_offset = base_sash_width / 2.0f;
+
+	// --- Key values for the new, correct behaviour ---
+	// Increased downward tilt to make the cloth kick out more aggressively.
+	const float TILT_DOWNWARD_X = 25.0f; // Increased from 15.0f
+	// The angle for flaring the sashes out to the sides
+	const float FLARE_SIDEWAYS_Y = 35.0f;
+	// A tiny physical gap to ensure the cloth renders on the outside
+	const float SURFACE_OFFSET = 0.02f;
+
+	// A reusable function to draw one sash
+	auto drawOneSash = [&](bool isLeftSash) {
+		glPushMatrix();
+		// 1. ANCHOR DIRECTLY ON THE BODY'S SURFACE at the belt line.
+		glTranslatef(isLeftSash ? -start_x_offset : +start_x_offset,
+			belt_top_back_y,
+			-belt_back_radius);
+
+		// 2. ROTATE to flare sideways and then tilt down and away from the body.
+		glRotatef(isLeftSash ? +FLARE_SIDEWAYS_Y : -FLARE_SIDEWAYS_Y, 0.0f, 1.0f, 0.0f);
+		glRotatef(TILT_DOWNWARD_X, 1.0f, 0.0f, 0.0f);
+
+		// Set cloth and bead colours
+		glColor3f(0.9f, 0.5f, 0.0f);
+
+		// 3. DRAW THE CLOTH with the physical offset and new curve.
+		glBegin(GL_QUAD_STRIP);
+		for (int i = 0; i <= segments; ++i) {
+			float t = (float)i / segments;
+			float y = -t * sash_length;
+
+			// NEW Z-CURVE CALCULATION:
+			// This makes the sash project outwards more strongly at the beginning (small 't'),
+			// then curve backwards more gently as it goes down.
+			// Using a power function (e.g., t^0.5 or 1-cos(t*PI/2)) can give different curve feels.
+			// Let's try a softer, more exponential outward curve.
+			float z = SURFACE_OFFSET + (-0.5f * pow(t, 2.0f)); // Starts at offset, then curves back gently. Adjust 0.5f to control curvature.
+
+			float current_width = base_sash_width + t * flare_factor;
+			float x_offset = sin(t * PI) * (isLeftSash ? -0.2f : 0.2f);
+
+			glNormal3f(isLeftSash ? 0.45f : -0.45f, 0.5f, -0.75f);
+
+			glVertex3f(x_offset - current_width * 0.5f, y, z);
+			glVertex3f(x_offset + current_width * 0.5f, y, z);
+		}
+		glEnd();
+
+		// Draw the beads
+		glColor3f(0.9f, 0.7f, 0.1f);
+		for (int i = 1; i <= 5; ++i) {
+			glPushMatrix();
+			float t = i * 0.2f;
+			float y = -sash_length * t;
+			// Use the same new Z-curve for beads
+			float z = SURFACE_OFFSET + (-0.5f * pow(t, 2.0f));
+
+			float current_width = base_sash_width + t * flare_factor;
+			float x_offset = sin(t * PI) * (isLeftSash ? -0.2f : 0.2f);
+			float sphere_radius = 0.06f;
+
+			float bead_x = x_offset + (isLeftSash ? +current_width * 0.5f - 0.04f : -current_width * 0.5f + 0.04f);
+			glTranslatef(bead_x, y, z + 0.02f);
+			gluSphere(quad, sphere_radius, 12, 12);
+			glPopMatrix();
+		}
+
+		glPopMatrix();
+		};
+
+	drawOneSash(true);   // Draw the left sash
+	drawOneSash(false);  // Draw the right sash
+
+	gluDeleteQuadric(quad);
+}
 
 void display()
 {
@@ -512,7 +688,11 @@ void display()
 	drawWaistWithVerticalLines();
 	drawSmoothLowerBodyAndSkirt();
 
-	// Use glPolygonOffset to draw the belt on top of the skirt
+	// The new drawBackSashes function handles its own positioning
+	// and does not need any special settings here.
+	drawBackSashes();
+
+	// The belt still needs its polygon offset
 	glEnable(GL_POLYGON_OFFSET_FILL);
 	glPolygonOffset(-1.0f, -1.0f);
 	drawWaistBelt();
