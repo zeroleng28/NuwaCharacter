@@ -687,7 +687,7 @@ void drawHelmetVisor()
 	glPushMatrix();
 
 	// Set up shiny material for the visor
-	GLfloat mat_ambient[] = { 0.8f, 0.7f, 0.1f, 1.0f };
+	GLfloat mat_ambient[] = { 0.8f, 0.7f, 0.1f, 1.0f }; 
 	GLfloat mat_diffuse[] = { 1.0f, 0.84f, 0.0f, 1.0f };
 	GLfloat mat_specular[] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	GLfloat mat_shininess[] = { 128.0f };
