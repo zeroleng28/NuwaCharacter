@@ -322,7 +322,7 @@ void drawSmoothChest()
 	};
 	int chest_points = sizeof(chest_profile) / sizeof(chest_profile[0]);
 	drawLathedObject(chest_profile, chest_points, 20);
-} 
+}  
 
 void drawSmoothLowerBodyAndSkirt()
 {
