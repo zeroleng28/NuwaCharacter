@@ -3,11 +3,42 @@
 #include <gl/GLU.h>
 #include <math.h>
 #include <vector>
+#include <stdio.h>
+#include <time.h> 
 
 #pragma comment (lib, "OpenGL32.lib")
 #pragma comment (lib, "GLU32.lib")
 
 #define WINDOW_TITLE "OpenGL Window"
+
+struct Particle {
+	float x, y, z;          // Position
+	float vx, vy, vz;       // Velocity
+	float r, g, b, a;       // Color (with alpha for fading)
+	float life;             // Current life (0.0 - 1.0)
+	float fade;             // How fast it fades
+	float size;             // Size of the particle
+	float initialSize;      // Store the starting size
+};
+
+std::vector<Particle> g_particles; // Our particle array
+const int MAX_PARTICLES = 1000;    // Max particles at any time
+bool g_isFiringEars = false;      // True if 'B' is pressed and ears should emit
+float g_lastParticleEmitTime = 0.0f; // To control emission rate
+float g_emitInterval = 0.05f;
+
+// --- NEW: Animation State Variables ---
+bool g_isHaloAnimating = false;
+bool g_isHaloVisible = true;
+float g_haloZ = -0.5f;
+float g_haloScale = 0.38f;
+
+// Store the light's initial and current animated position
+GLfloat g_initialLightPos[4] = { 5.0f, 5.0f, 5.0f, 1.0f };
+GLfloat g_animatedLightPos[4];
+
+GLuint g_fireTextureID = 0;
+GLuint g_goldTextureID = 0;
 
 // --- NEW variables for Delta Time calculation ---
 LARGE_INTEGER g_timer_frequency;
@@ -28,6 +59,20 @@ bool isDragging = false;
 int lastMouseX = 0;
 int lastMouseY = 0;
 
+void resetAnimation() {
+	g_isHaloAnimating = false;
+	g_isHaloVisible = true;
+	g_haloZ = -0.5f;
+	g_haloScale = 0.38f;
+
+	// Reset the light's position
+	memcpy(g_animatedLightPos, g_initialLightPos, sizeof(GLfloat) * 4);
+
+	// --- NEW: Reset particle system state ---
+	g_isFiringEars = false;
+	g_particles.clear();
+}
+
 LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	switch (msg)
@@ -37,7 +82,26 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 		break;
 
 	case WM_KEYDOWN:
+		// --- Handle all keyboard input ---
+
+		// Exit the application
 		if (wParam == VK_ESCAPE) PostQuitMessage(0);
+
+		// Start the halo animation
+		if (wParam == 'A') {
+			g_isHaloAnimating = true;
+		}
+
+		// --- THIS WAS MISSING ---
+		// Toggle the ear fire particle effect
+		if (wParam == 'B') {
+			g_isFiringEars = !g_isFiringEars;
+		}
+
+		// Reset all animations
+		if (wParam == VK_SPACE) {
+			resetAnimation();
+		}
 		break;
 
 	case WM_LBUTTONDOWN:
@@ -93,7 +157,6 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 
 	return DefWindowProc(hWnd, msg, wParam, lParam);
 }
-//--------------------------------------------------------------------
 
 bool initPixelFormat(HDC hdc)
 {
@@ -117,6 +180,69 @@ bool initPixelFormat(HDC hdc)
 	{
 		return false;
 	}
+}
+
+GLuint loadTextureBMP(const char* imagepath) {
+	printf("Reading image %s\n", imagepath);
+
+	unsigned char header[54];
+	unsigned int dataPos;
+	unsigned int width, height;
+	unsigned int imageSize;
+	unsigned char* data;
+
+	FILE* file;
+	fopen_s(&file, imagepath, "rb");
+	if (!file) {
+		printf("Image could not be opened\n");
+		return 0;
+	}
+
+	if (fread(header, 1, 54, file) != 54) {
+		printf("Not a correct BMP file\n");
+		fclose(file); // Close the file on error
+		return 0;
+	}
+	if (header[0] != 'B' || header[1] != 'M') {
+		printf("Not a correct BMP file\n");
+		fclose(file); // Close the file on error
+		return 0;
+	}
+
+	dataPos = *(int*)&(header[0x0A]);
+	imageSize = *(int*)&(header[0x22]);
+	width = *(int*)&(header[0x12]);
+	height = *(int*)&(header[0x16]);
+
+	if (imageSize == 0)    imageSize = width * height * 3;
+	if (dataPos == 0)      dataPos = 54;
+
+	data = new unsigned char[imageSize];
+	fread(data, 1, imageSize, file);
+	fclose(file);
+
+	GLuint textureID;
+	glGenTextures(1, &textureID);
+	glBindTexture(GL_TEXTURE_2D, textureID);
+
+	// Give the image to OpenGL
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_BGR_EXT, GL_UNSIGNED_BYTE, data);
+
+	// THE FIX IS HERE: The delete[] data; line was moved from here...
+
+	// Texture filtering and wrapping
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+
+	// Generate Mipmaps AFTER creating the main texture and BEFORE deleting the data
+	gluBuild2DMipmaps(GL_TEXTURE_2D, GL_RGB, width, height, GL_BGR_EXT, GL_UNSIGNED_BYTE, data);
+
+	// ...to here. Now we can safely free our copy of the data.
+	delete[] data;
+
+	return textureID;
 }
 //--------------------------------------------------------------------
 
@@ -217,8 +343,11 @@ void drawLathedObject(float profile[][2], int num_points, int sides)
 			float sin_angle = sin(angle_rad);
 			float dx = profile[i + 1][0] - profile[i][0];
 			float dy = profile[i + 1][1] - profile[i][1];
-			float normal_x_profile = -dy;
-			float normal_y_profile = dx;
+
+			// --- REVERTED NORMALS ---
+			float normal_x_profile = -dy; // Revert to -dy
+			float normal_y_profile = dx;  // Revert to dx
+
 			float normal_len_2d = sqrt(normal_x_profile * normal_x_profile + normal_y_profile * normal_y_profile);
 			if (normal_len_2d > EPSILON) {
 				normal_x_profile /= normal_len_2d;
@@ -230,8 +359,17 @@ void drawLathedObject(float profile[][2], int num_points, int sides)
 			}
 			float normal_x_3d = normal_x_profile * cos_angle;
 			float normal_z_3d = normal_x_profile * sin_angle;
+
+			// Add texture coordinates
+			float u = (float)j / sides;
+			float v1 = (float)i / (num_points - 1);
+			float v2 = (float)(i + 1) / (num_points - 1);
+
+			glTexCoord2f(u, v1); // Texture coord for the first vertex
 			glVertex3f(profile[i][0] * cos_angle, profile[i][1], profile[i][0] * sin_angle);
 			glNormal3f(normal_x_3d, normal_y_profile, normal_z_3d);
+
+			glTexCoord2f(u, v2); // Texture coord for the second vertex
 			glVertex3f(profile[i + 1][0] * cos_angle, profile[i + 1][1], profile[i + 1][0] * sin_angle);
 			glNormal3f(normal_x_3d, normal_y_profile, normal_z_3d);
 		}
@@ -556,7 +694,6 @@ void drawWaistBelt()
 	glPopMatrix();
 }
 
-// --- Modified drawArmorCollar (REMOVE old neck part) ---
 void drawArmorCollar()
 {
 	glColor3f(0.8f, 0.6f, 0.0f);
@@ -577,9 +714,6 @@ void drawArmorCollar()
 	// No more: glColor3f(1.0f, 0.84f, 0.0f); float neck_profile[][2] = {{0.17f, 0.88f}, {0.17f, 0.95f}}; drawLathedObject(neck_profile, 2, 16);
 }
 
-// ----------------------------
-// Lathed Sphere (array version)
-// ----------------------------
 void drawSphere(float r, int slices, int stacks)
 {
 	const int MAX_STACKS = 50; // adjust if needed
@@ -599,20 +733,17 @@ void drawSphere(float r, int slices, int stacks)
 	drawLathedObject(profile, count, slices);
 }
 
-// ----------------------------
-// Lathed Cone (array version)
-// ----------------------------
 void drawCone(float base, float height, int slices, int stacks)
 {
+	// THE FIX: The points are reversed to go from the tip to the base.
+	// This makes the normal calculation in drawLathedObject work correctly for the cone.
 	float profile[2][2] = {
-		{base, 0.0f},
-		{0.0f, height}
+		{0.0f, height}, // Tip of the cone (Top)
+		{base, 0.0f}    // Base of the cone (Bottom)
 	};
 	drawLathedObject(profile, 2, slices);
 }
 
-// --- UPDATED drawNeck function ---
-// This version has a lower position and a smoother, multi-point curve.
 void drawNeck()
 {
 	glColor3f(1.0f, 0.84f, 0.0f); // Golden yellow, same as body
@@ -632,9 +763,6 @@ void drawNeck()
 	drawLathedObject(neck_profile, neck_points, 20);
 }
 
-// ----------------------------
-// Head Decoration (halo + wings + crown spike)
-// ----------------------------
 void drawHeadDeco()
 {
 	glPushMatrix();
@@ -680,14 +808,12 @@ void drawHeadDeco()
 	glPopMatrix();
 }
 
-// --- UPDATED function to draw the helmet piece ---
-// This now draws the triangle upside down.
 void drawHelmetVisor()
 {
 	glPushMatrix();
 
 	// Set up shiny material for the visor
-	GLfloat mat_ambient[] = { 0.8f, 0.7f, 0.1f, 1.0f }; 
+	GLfloat mat_ambient[] = { 0.8f, 0.7f, 0.1f, 1.0f };
 	GLfloat mat_diffuse[] = { 1.0f, 0.84f, 0.0f, 1.0f };
 	GLfloat mat_specular[] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	GLfloat mat_shininess[] = { 128.0f };
@@ -697,30 +823,47 @@ void drawHelmetVisor()
 	glMaterialfv(GL_FRONT, GL_SPECULAR, mat_specular);
 	glMaterialfv(GL_FRONT, GL_SHININESS, mat_shininess);
 
+	// --- NEW: Enable and apply the Gold texture ---
+	glEnable(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, g_goldTextureID); // Bind the new gold texture
+	// Use GL_MODULATE to combine the gold texture with the material lighting
+	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+
 	// Define the triangle's vertices to control its size and shape.
-	float base_width = 0.15f;
+	float base_width = 0.35f;
 	float height = 0.55f;
 
 	glBegin(GL_TRIANGLES);
-	glNormal3f(0.0f, 0.0f, 1.0f);
-	// MODIFIED: Vertices for an upside-down (downward-pointing) triangle
-	glVertex3f(-base_width, 0.0f, 0.0f);   // Top-left vertex
-	glVertex3f(base_width, 0.0f, 0.0f);    // Top-right vertex
-	glVertex3f(0.0f, -height, 0.0f);       // Bottom-center tip
+	glNormal3f(0.0f, 0.0f, 1.0f); // Normal for the front face
+
+	// MODIFIED: Vertices for an upside-down (downward-pointing) triangle with Texture Coordinates
+	glTexCoord2f(0.0f, 1.0f); // Top-left of texture maps to top-left of triangle
+	glVertex3f(-base_width, 0.0f, 0.0f);
+
+	glTexCoord2f(1.0f, 1.0f); // Top-right of texture maps to top-right of triangle
+	glVertex3f(base_width, 0.0f, 0.0f);
+
+	glTexCoord2f(0.5f, 0.0f); // Middle-bottom of texture maps to bottom tip of triangle
+	glVertex3f(0.0f, -height, 0.0f);
 	glEnd();
+
+	// --- NEW: Disable texturing after drawing the visor ---
+	glDisable(GL_TEXTURE_2D);
 
 	glPopMatrix();
 }
 
-// --- UPDATED function to draw the dynamic halo ---
 void drawHalo()
 {
+	if (!g_isHaloVisible) {
+		return; // Don't draw if it's out of range
+	}
+
 	glPushMatrix();
 
 	// MODIFIED: Changed Z-translation to -1.2f to make the gap 4 times larger.
-	// Original was -0.3f, 4 * -0.3f = -1.2f.
-	glTranslatef(0.0f, 1.5f, -0.5f);
-	glScalef(0.38f, 0.38f, 0.38f);
+	glTranslatef(0.0f, 1.5f, g_haloZ);
+	glScalef(g_haloScale, g_haloScale, g_haloScale);
 
 	// --- 1. Draw the Gradient Gold Rings ---
 	glDisable(GL_LIGHTING);
@@ -853,24 +996,196 @@ void drawBackSashes()
 		};
 }
 
+void updateParticles(float deltaTime)
+{
+	// Emit new particles if firing
+	if (g_isFiringEars) {
+		if (g_lastParticleEmitTime >= g_emitInterval) {
 
-// --- UPDATED drawFace function ---
-// This now positions the flipped visor higher on the face.
+			// --- CORRECTED: Define ear tip position in LOCAL space ---
+			// This is the position relative to the character's center pivot
+			float earTipY = 1.18f + 0.2f; // Head's Y-offset + Ear's Y-offset
+			float earTipX = 0.3f + 0.6f;  // Ear's X-offset + Ear's length
+
+			// --- Emit from Right Ear ---
+			if (g_particles.size() < MAX_PARTICLES) {
+				Particle p;
+				// Position is in simple, un-rotated local space
+				p.x = earTipX;
+				p.y = earTipY;
+				p.z = 0.0f;
+
+				// Velocity is in simple, un-rotated local space (points away from the ear)
+				p.vx = 2.0f + ((float)rand() / RAND_MAX);
+				p.vy = (float)rand() / RAND_MAX * 0.5f - 0.25f;
+				p.vz = (float)rand() / RAND_MAX * 0.5f - 0.25f;
+
+				// Set particle properties
+				int colorType = rand() % 2;
+				if (colorType == 0) { p.r = 1.0f; p.g = 1.0f; p.b = (float)rand() / RAND_MAX * 0.5f; }
+				else { p.r = 1.0f; p.g = 0.5f + ((float)rand() / RAND_MAX * 0.2f); p.b = 0.0f; }
+				p.life = 1.0f;
+				p.fade = (float)rand() / RAND_MAX * 0.7f + 1.0f;
+				p.size = (float)rand() / RAND_MAX * 0.15f + 0.1f;
+				p.initialSize = p.size;
+				p.a = 0.7f + ((float)rand() / RAND_MAX * 0.3f);
+				g_particles.push_back(p);
+			}
+
+			// --- Emit from Left Ear ---
+			if (g_particles.size() < MAX_PARTICLES) {
+				Particle p;
+				// Position is in simple, un-rotated local space
+				p.x = -earTipX;
+				p.y = earTipY;
+				p.z = 0.0f;
+
+				// Velocity is in simple, un-rotated local space
+				p.vx = -2.0f - ((float)rand() / RAND_MAX);
+				p.vy = (float)rand() / RAND_MAX * 0.5f - 0.25f;
+				p.vz = (float)rand() / RAND_MAX * 0.5f - 0.25f;
+
+				// Set particle properties
+				int colorType = rand() % 2;
+				if (colorType == 0) { p.r = 1.0f; p.g = 1.0f; p.b = (float)rand() / RAND_MAX * 0.5f; }
+				else { p.r = 1.0f; p.g = 0.5f + ((float)rand() / RAND_MAX * 0.2f); p.b = 0.0f; }
+				p.life = 1.0f;
+				p.fade = (float)rand() / RAND_MAX * 0.7f + 1.0f;
+				p.size = (float)rand() / RAND_MAX * 0.15f + 0.1f;
+				p.initialSize = p.size;
+				p.a = 0.7f + ((float)rand() / RAND_MAX * 0.3f);
+				g_particles.push_back(p);
+			}
+			g_lastParticleEmitTime = 0.0f;
+		}
+		else {
+			g_lastParticleEmitTime += deltaTime;
+		}
+	}
+
+	// Update existing particles
+	for (auto it = g_particles.begin(); it != g_particles.end(); ) {
+		// Note: The "wind" effect here is now relative to the character's orientation
+		it->vx += 0.5f * deltaTime;
+		it->vy += 0.8f * deltaTime;
+		it->x += it->vx * deltaTime;
+		it->y += it->vy * deltaTime;
+		it->z += it->vz * deltaTime;
+		it->life -= it->fade * deltaTime;
+		it->a = it->life;
+		if (it->life <= 0.0f) {
+			it = g_particles.erase(it);
+		}
+		else {
+			++it;
+		}
+	}
+}
+
+void drawParticles() {
+	if (g_particles.empty()) return;
+
+	// Save OpenGL state
+	glPushAttrib(GL_LIGHTING_BIT | GL_ENABLE_BIT | GL_POINT_BIT | GL_DEPTH_BUFFER_BIT);
+
+	glDisable(GL_LIGHTING); // Particles are self-illuminated
+	glEnable(GL_BLEND);     // Enable transparency
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // Normal alpha blending
+	glDepthMask(GL_FALSE);  // Allow particles to render correctly without depth issues
+
+	// --- NEW: Make points soft and circular instead of square ---
+	glEnable(GL_POINT_SMOOTH);
+	glHint(GL_POINT_SMOOTH_HINT, GL_NICEST);
+
+	// --- NEW: Begin drawing points, not quads ---
+	glBegin(GL_POINTS);
+	for (const auto& p : g_particles) {
+		// Set the colour and transparency for this particle
+		glColor4f(p.r, p.g, p.b, p.a);
+
+		// Calculate the current size for the pulsing effect
+		float currentSize = p.initialSize * sin(p.life * 3.14159f);
+
+		// Set the size of the point in pixels
+		// This is the main number to adjust for the flame's visual size
+		glPointSize(currentSize * 60.0f);
+
+		// Draw the single point for the particle
+		glVertex3f(p.x, p.y, p.z);
+	}
+	glEnd();
+
+	// Restore the original OpenGL state
+	glPopAttrib();
+}
+
+void drawEars()
+{
+	glPushAttrib(GL_LIGHTING_BIT | GL_ENABLE_BIT);
+
+	GLfloat bright_ear_ambient[] = { 0.6f, 0.5f, 0.2f, 1.0f };
+	GLfloat bright_ear_diffuse[] = { 1.0f, 0.9f, 0.3f, 1.0f };
+	GLfloat bright_ear_specular[] = { 1.0f, 1.0f, 0.8f, 1.0f };
+	GLfloat bright_ear_shininess[] = { 100.0f };
+
+	glMaterialfv(GL_FRONT, GL_AMBIENT, bright_ear_ambient);
+	glMaterialfv(GL_FRONT, GL_DIFFUSE, bright_ear_diffuse);
+	glMaterialfv(GL_FRONT, GL_SPECULAR, bright_ear_specular);
+	glMaterialfv(GL_FRONT, GL_SHININESS, bright_ear_shininess);
+
+	glEnable(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, g_fireTextureID);
+	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+
+	float ear_base_radius = 0.15f;
+	float ear_height = 0.6f;
+
+	// --- Right Ear ---
+	glPushMatrix();
+	// CORRECTED POSITIONING
+	glTranslatef(0.3f, 0.2f, 0.0f);
+	glRotatef(-90.0f, 0.0f, 0.0f, 1.0f);
+	drawCone(ear_base_radius, ear_height, 16, 16);
+	glPopMatrix();
+
+	// --- Left Ear ---
+	glPushMatrix();
+	// CORRECTED POSITIONING
+	glTranslatef(-0.3f, 0.2f, 0.0f);
+	glRotatef(90.0f, 0.0f, 0.0f, 1.0f);
+	drawCone(ear_base_radius, ear_height, 16, 16);
+	glPopMatrix();
+
+	glDisable(GL_TEXTURE_2D);
+	glPopAttrib();
+}
+
 void drawFace()
 {
-	glColor3f(1.0f, 0.84f, 0.0f);
+	// Apply the same golden material to the head and ears
+	GLfloat mat_ambient[] = { 0.55f, 0.38f, 0.1f, 1.0f };
+	GLfloat mat_diffuse[] = { 1.0f, 0.84f, 0.0f, 1.0f };
+	GLfloat mat_specular[] = { 1.0f, 1.0f, 0.8f, 1.0f };
+	GLfloat mat_shininess[] = { 100.0f };
 
+	glMaterialfv(GL_FRONT, GL_AMBIENT, mat_ambient);
+	glMaterialfv(GL_FRONT, GL_DIFFUSE, mat_diffuse);
+	glMaterialfv(GL_FRONT, GL_SPECULAR, mat_specular);
+	glMaterialfv(GL_FRONT, GL_SHININESS, mat_shininess);
+
+	glPushMatrix(); // Start of the entire head group
 	glTranslatef(0.0f, 1.18f, 0.0f);
 
 	// --- Add the Helmet Visor ---
 	glPushMatrix();
-	// MODIFIED: Moved the visor higher up on the head (0.3f instead of 0.2f)
 	glTranslatef(0.0f, 0.28f, 0.28f);
 	drawHelmetVisor();
 	glPopMatrix();
 
+	// --- NEW: Draw the Ears ---
+	drawEars(); // <--- ADD THIS LINE
+
 	// --- Main Head Shape ---
-	// ... (The rest of your drawFace function is unchanged) ...
 	int latitudes = 15;
 	int longitudes = 20;
 	float head_height = 0.5f;
@@ -900,14 +1215,20 @@ void drawFace()
 		}
 		glEnd();
 	}
-	glPopMatrix();
+	glPopMatrix(); // End of the entire head group
 }
 
 void drawDiamondKneeJoint()
 {
 	glPushMatrix();
-	// NOTE: This function now inherits the material set in drawLegs()
-	// to ensure the colour and lighting match the body perfectly.
+	// NOTE: This function inherits the gold material from drawLegs()
+
+	// --- NEW: Enable and apply the fire texture ---
+	glEnable(GL_TEXTURE_2D);
+	// We use g_fireTextureID because it already has Fire.bmp loaded
+	glBindTexture(GL_TEXTURE_2D, g_fireTextureID);
+	// This blends the fire texture with the existing gold material and lighting
+	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 
 	// Y-scale (height) is kept long to allow for overlap
 	glScalef(0.2f, 0.45f, 0.2f); // X, Y (height), Z scale
@@ -925,6 +1246,17 @@ void drawDiamondKneeJoint()
 		{ 0.0f,  0.0f, -1.0f}  // Back
 	};
 
+	// --- NEW: Define texture coordinates for the 6 points ---
+	// This maps points on the 2D fire image to the 3D diamond points.
+	float t[6][2] = {
+		{0.5f, 1.0f}, // Top-middle of texture
+		{0.5f, 0.0f}, // Bottom-middle of texture
+		{1.0f, 0.5f}, // Middle-right of texture
+		{0.0f, 0.5f}, // Middle-left of texture
+		{0.5f, 0.5f}, // Center of texture
+		{0.5f, 0.5f}  // Center of texture
+	};
+
 	// An array to hold the calculated normals for each of the 8 faces
 	float n[8][3] = {
 		{ 0.707f,  0.707f,  0.707f}, { -0.707f,  0.707f,  0.707f},
@@ -936,30 +1268,49 @@ void drawDiamondKneeJoint()
 	glBegin(GL_TRIANGLES);
 	// Top-Front-Right face
 	glNormal3fv(n[0]);
-	glVertex3fv(p[0]); glVertex3fv(p[4]); glVertex3fv(p[2]);
+	glTexCoord2fv(t[0]); glVertex3fv(p[0]);
+	glTexCoord2fv(t[4]); glVertex3fv(p[4]);
+	glTexCoord2fv(t[2]); glVertex3fv(p[2]);
 	// Top-Front-Left face
 	glNormal3fv(n[1]);
-	glVertex3fv(p[0]); glVertex3fv(p[3]); glVertex3fv(p[4]);
+	glTexCoord2fv(t[0]); glVertex3fv(p[0]);
+	glTexCoord2fv(t[3]); glVertex3fv(p[3]);
+	glTexCoord2fv(t[4]); glVertex3fv(p[4]);
 	// Top-Back-Left face
 	glNormal3fv(n[2]);
-	glVertex3fv(p[0]); glVertex3fv(p[5]); glVertex3fv(p[3]);
+	glTexCoord2fv(t[0]); glVertex3fv(p[0]);
+	glTexCoord2fv(t[5]); glVertex3fv(p[5]);
+	glTexCoord2fv(t[3]); glVertex3fv(p[3]);
 	// Top-Back-Right face
 	glNormal3fv(n[3]);
-	glVertex3fv(p[0]); glVertex3fv(p[2]); glVertex3fv(p[5]);
+	glTexCoord2fv(t[0]); glVertex3fv(p[0]);
+	glTexCoord2fv(t[2]); glVertex3fv(p[2]);
+	glTexCoord2fv(t[5]); glVertex3fv(p[5]);
 
 	// Bottom-Front-Right face
 	glNormal3fv(n[4]);
-	glVertex3fv(p[1]); glVertex3fv(p[2]); glVertex3fv(p[4]);
+	glTexCoord2fv(t[1]); glVertex3fv(p[1]);
+	glTexCoord2fv(t[2]); glVertex3fv(p[2]);
+	glTexCoord2fv(t[4]); glVertex3fv(p[4]);
 	// Bottom-Front-Left face
 	glNormal3fv(n[5]);
-	glVertex3fv(p[1]); glVertex3fv(p[4]); glVertex3fv(p[3]);
+	glTexCoord2fv(t[1]); glVertex3fv(p[1]);
+	glTexCoord2fv(t[4]); glVertex3fv(p[4]);
+	glTexCoord2fv(t[3]); glVertex3fv(p[3]);
 	// Bottom-Back-Left face
 	glNormal3fv(n[6]);
-	glVertex3fv(p[1]); glVertex3fv(p[3]); glVertex3fv(p[5]);
+	glTexCoord2fv(t[1]); glVertex3fv(p[1]);
+	glTexCoord2fv(t[3]); glVertex3fv(p[3]);
+	glTexCoord2fv(t[5]); glVertex3fv(p[5]);
 	// Bottom-Back-Right face
 	glNormal3fv(n[7]);
-	glVertex3fv(p[1]); glVertex3fv(p[5]); glVertex3fv(p[2]);
+	glTexCoord2fv(t[1]); glVertex3fv(p[1]);
+	glTexCoord2fv(t[5]); glVertex3fv(p[5]);
+	glTexCoord2fv(t[2]); glVertex3fv(p[2]);
 	glEnd();
+
+	// --- NEW: Disable texturing so it doesn't affect other objects ---
+	glDisable(GL_TEXTURE_2D);
 
 	glPopMatrix();
 }
@@ -1080,10 +1431,30 @@ void drawLegs()
 	glPopMatrix();
 }
 
-// --- UPDATED display function ---
-// --- UPDATED display function ---
 void display(float deltaTime)
 {
+	// --- NEW: Update particle system at the start of the frame ---
+	updateParticles(deltaTime);
+
+	// --- Halo Animation Logic Block ---
+	if (g_isHaloAnimating) {
+		// Define animation speeds
+		const float HALO_MOVE_SPEED = 5.0f;   // How fast it moves forward
+		const float HALO_SCALE_SPEED = 2.0f;  // How fast it grows (using your faster value)
+		const float HALO_DISAPPEAR_Z = 4.0f;  // The Z-position where it disappears
+
+		// Update position and scale based on delta time for smooth animation
+		g_haloZ += HALO_MOVE_SPEED * deltaTime;
+		g_haloScale += HALO_SCALE_SPEED * deltaTime;
+		g_animatedLightPos[2] += HALO_MOVE_SPEED * deltaTime;
+
+		// Check if the halo is out of range
+		if (g_haloZ > HALO_DISAPPEAR_Z) {
+			g_isHaloVisible = false;   // Make it invisible
+			g_isHaloAnimating = false; // Stop the animation from updating further
+		}
+	}
+
 	// Increment the global offset each frame to animate the halo colours
 	float animation_speed = 0.09f;
 	g_rainbow_offset += animation_speed * deltaTime;
@@ -1096,12 +1467,21 @@ void display(float deltaTime)
 	glEnable(GL_COLOR_MATERIAL);
 	glShadeModel(GL_SMOOTH);
 
-	glEnable(GL_NORMALIZE); // <-- ADD THIS LINE to fix lighting on scaled objects
+	glEnable(GL_NORMALIZE);
 
-	GLfloat light_pos[] = { 5.0f, 5.0f, 5.0f, 1.0f };
-	glLightfv(GL_LIGHT0, GL_POSITION, light_pos);
-	GLfloat ambient_light[] = { 0.3f, 0.3f, 0.3f, 1.0f };
+	// --- Main "Key Light" ---
+	glLightfv(GL_LIGHT0, GL_POSITION, g_animatedLightPos);
+	GLfloat ambient_light[] = { 0.5f, 0.5f, 0.5f, 1.0f }; // Using your brighter value
 	glLightModelfv(GL_LIGHT_MODEL_AMBIENT, ambient_light);
+
+	// --- Second "Fill Light" ---
+	glEnable(GL_LIGHT1);
+	GLfloat light1_pos[] = { 0.0f, 2.0f, 5.0f, 1.0f };
+	GLfloat light1_diffuse[] = { 0.4f, 0.4f, 0.4f, 1.0f };
+	GLfloat light1_specular[] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	glLightfv(GL_LIGHT1, GL_POSITION, light1_pos);
+	glLightfv(GL_LIGHT1, GL_DIFFUSE, light1_diffuse);
+	glLightfv(GL_LIGHT1, GL_SPECULAR, light1_specular);
 
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
@@ -1115,13 +1495,12 @@ void display(float deltaTime)
 	glRotatef(rotateX, 1.0f, 0.0f, 0.0f);
 	glRotatef(rotateY, 0.0f, 1.0f, 0.0f);
 
-	// --- Drawing Calls ---
+	// --- Drawing Calls for the Character ---
 	drawSmoothChest();
 	drawWaistWithVerticalLines();
 	drawSmoothLowerBodyAndSkirt();
 	drawLegs();
 
-	// Use glPolygonOffset to draw the belt on top of the skirt
 	glEnable(GL_POLYGON_OFFSET_FILL);
 	glPolygonOffset(-1.0f, -1.0f);
 	drawWaistBelt();
@@ -1135,16 +1514,22 @@ void display(float deltaTime)
 	glPushMatrix();
 	drawNeck();
 	drawFace();
-	// Draw the halo after the face so it's positioned relative to the final head location
 	drawHalo();
 	glPopMatrix();
+
+	// --- NEW: Draw particle system after the character ---
+	drawParticles();
+
+	// --- NEW: Swap buffers at the end of all drawing ---
+	SwapBuffers(g_hDC);
 }
-
-
-//--------------------------------------------------------------------
 
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow)
 {
+	// --- NEW: Initialise the random number generator ---
+	// This is crucial for the particle system to look different each time.
+	srand(time(NULL));
+
 	// --- Register Window Class ---
 	WNDCLASSEX wc;
 	ZeroMemory(&wc, sizeof(WNDCLASSEX));
@@ -1159,7 +1544,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow)
 	// --- Create Window ---
 	HWND hWnd = CreateWindow(
 		WINDOW_TITLE, WINDOW_TITLE,
-		WS_OVERLAPPEDWINDOW, // <-- CORRECTED TYPO HERE
+		WS_OVERLAPPEDWINDOW,
 		CW_USEDEFAULT, CW_USEDEFAULT, 800, 600,
 		NULL, NULL, hInst, NULL
 	);
@@ -1180,6 +1565,23 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow)
 	if (!wglMakeCurrent(g_hDC, g_hRC)) return -1;
 
 	ShowWindow(hWnd, nCmdShow);
+
+	// --- Load textures ---
+	// CORRECTED: The global variable is named g_skyTextureID, not g_fireTextureID
+	g_fireTextureID = loadTextureBMP("Textures/Fire.bmp");
+	if (g_fireTextureID == 0) {
+		MessageBox(hWnd, "Could not load Textures/Fire.bmp. Make sure the file is in the Textures folder.", "Texture Error", MB_OK | MB_ICONERROR);
+		return -1; // Exit if the texture fails to load
+	}
+
+	g_goldTextureID = loadTextureBMP("Textures/Gold.bmp");
+	if (g_goldTextureID == 0) {
+		MessageBox(hWnd, "Could not load Textures/Gold.bmp. Make sure the file is in the Textures folder.", "Texture Error", MB_OK | MB_ICONERROR);
+		return -1;
+	}
+
+	// --- Set the initial animation state ---
+	resetAnimation();
 
 	// --- Initialize the high-precision timer for delta time ---
 	QueryPerformanceFrequency(&g_timer_frequency);
@@ -1205,8 +1607,8 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow)
 		g_last_frame_time = current_frame_time;
 
 		// --- Render ---
-		display(deltaTime); // Pass delta time to the display function
-		SwapBuffers(g_hDC);
+		display(deltaTime);
+		// Note: SwapBuffers is now called inside display() in the particle system version
 	}
 
 	// --- Cleanup ---
