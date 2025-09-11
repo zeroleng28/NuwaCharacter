@@ -360,7 +360,7 @@ void drawSmoothArms()
 	glTranslatef(0.0f, -0.5f, 0.0f);
 
 	// Step 2: ELBOW: Using original Right Arm's rotation
-	glRotatef(25.0f, 1.0f, 0.0f, 0.0f);
+	glRotatef(-25.0f, 1.0f, 0.0f, 0.0f);
 
 	drawLathedObject(lower_arm_profile, 2, 12);
 	glTranslatef(0.0f, -0.4f, 0.0f);
@@ -384,7 +384,7 @@ void drawSmoothArms()
 	glTranslatef(0.0f, -0.5f, 0.0f);
 
 	// Step 2: ELBOW: Using original Left Arm's rotation
-	glRotatef(25.0f, 1.0f, 0.0f, 0.0f);
+	glRotatef(-25.0f, 1.0f, 0.0f, 0.0f);
 
 	drawLathedObject(lower_arm_profile, 2, 12);
 	glTranslatef(0.0f, -0.4f, 0.0f);
