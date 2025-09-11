@@ -322,7 +322,7 @@ void drawSmoothChest()
 	};
 	int chest_points = sizeof(chest_profile) / sizeof(chest_profile[0]);
 	drawLathedObject(chest_profile, chest_points, 20);
-}
+} 
 
 void drawSmoothLowerBodyAndSkirt()
 {
@@ -350,7 +350,8 @@ void drawSmoothArms()
 	// --- Left Arm ---
 	// This block now uses the rotations from the original RIGHT arm.
 	glPushMatrix();
-	glTranslatef(-0.6f, 0.6f, 0.0f); // Stays on the left side of the body
+	// CHANGED: Raised the shoulder height from 0.6f to 0.7f to lift the hand.
+	glTranslatef(-0.6f, 0.7f, 0.0f); // Stays on the left side of the body
 
 	// Step 1: SHOULDER: Using original Right Arm's rotation
 	glRotatef(10.0f, 0.0f, 0.0f, 1.0f);
@@ -373,7 +374,8 @@ void drawSmoothArms()
 	// --- Right Arm ---
 	// This block now uses the rotations from the original LEFT arm.
 	glPushMatrix();
-	glTranslatef(0.6f, 0.6f, 0.0f); // Stays on the right side of the body
+	// CHANGED: Raised the shoulder height from 0.6f to 0.7f to lift the hand.
+	glTranslatef(0.6f, 0.7f, 0.0f); // Stays on the right side of the body
 
 	// Step 1: SHOULDER: Using original Left Arm's rotation
 	glRotatef(-10.0f, 0.0f, 0.0f, 1.0f);
@@ -767,7 +769,8 @@ void drawHalo()
 	glEnable(GL_LIGHTING);
 }
 
-void drawBackSashes() {
+void drawBackSashes()
+{
 	const float PI = 3.14159f;
 	GLUquadric* quad = gluNewQuadric();
 
@@ -846,7 +849,59 @@ void drawBackSashes() {
 			gluSphere(quad, sphere_radius, 12, 12);
 			glPopMatrix();
 		}
+		glPopMatrix();
+		};
+}
 
+
+// --- UPDATED drawFace function ---
+// This now positions the flipped visor higher on the face.
+void drawFace()
+{
+	glColor3f(1.0f, 0.84f, 0.0f);
+
+	glTranslatef(0.0f, 1.18f, 0.0f);
+
+	// --- Add the Helmet Visor ---
+	glPushMatrix();
+	// MODIFIED: Moved the visor higher up on the head (0.3f instead of 0.2f)
+	glTranslatef(0.0f, 0.28f, 0.28f);
+	drawHelmetVisor();
+	glPopMatrix();
+
+	// --- Main Head Shape ---
+	// ... (The rest of your drawFace function is unchanged) ...
+	int latitudes = 15;
+	int longitudes = 20;
+	float head_height = 0.5f;
+	float head_max_radius = 0.28f;
+	float head_base_radius = 0.10f;
+
+	for (int i = 0; i <= latitudes; ++i) {
+		float lat0 = 3.14159f * (-0.5f + (float)(i - 1) / latitudes);
+		float lat1 = 3.14159f * (-0.5f + (float)i / latitudes);
+		float y0 = sin(lat0) * head_height / 2.0f;
+		float y1 = sin(lat1) * head_height / 2.0f;
+		float r0 = cos(lat0) * head_max_radius;
+		float r1 = cos(lat1) * head_max_radius;
+		if (i == 0) r0 = head_base_radius;
+		if (i == 1) r0 = head_base_radius;
+		glBegin(GL_QUAD_STRIP);
+		for (int j = 0; j <= longitudes; ++j) {
+			float lng = 2.0f * 3.14159f * (float)j / longitudes;
+			float x = cos(lng);
+			float z = sin(lng);
+			float nx0 = cos(lat0) * x, ny0 = sin(lat0), nz0 = cos(lat0) * z;
+			glNormal3f(nx0, ny0, nz0);
+			glVertex3f(r0 * x, y0, r0 * z);
+			float nx1 = cos(lat1) * x, ny1 = sin(lat1), nz1 = cos(lat1) * z;
+			glNormal3f(nx1, ny1, nz1);
+			glVertex3f(r1 * x, y1, r1 * z);
+		}
+		glEnd();
+	}
+	glPopMatrix();
+}
 
 // --- UPDATED display function ---
 void display(float deltaTime)
