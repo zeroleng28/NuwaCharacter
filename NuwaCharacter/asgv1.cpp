@@ -907,7 +907,7 @@ void drawFace()
 void display(float deltaTime)
 {
 	// Increment the global offset each frame to animate the halo colours
-	float animation_speed = 0.09f;
+	float animation_speed = 0.1f;
 	g_rainbow_offset += animation_speed * deltaTime;
 
 	glClearColor(1.0, 1.0, 1.0, 0.0);
