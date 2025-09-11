@@ -903,6 +903,184 @@ void drawFace()
 	glPopMatrix();
 }
 
+void drawDiamondKneeJoint()
+{
+	glPushMatrix();
+	// NOTE: This function now inherits the material set in drawLegs()
+	// to ensure the colour and lighting match the body perfectly.
+
+	// Y-scale (height) is kept long to allow for overlap
+	glScalef(0.2f, 0.45f, 0.2f); // X, Y (height), Z scale
+
+	// This rotation orients the diamond correctly
+	glRotatef(45.0f, 0.0f, 1.0f, 0.0f);
+
+	// Define the 6 points of our diamond (an octahedron)
+	float p[6][3] = {
+		{ 0.0f,  1.0f,  0.0f}, // Top
+		{ 0.0f, -1.0f,  0.0f}, // Bottom
+		{ 1.0f,  0.0f,  0.0f}, // Right
+		{-1.0f,  0.0f,  0.0f}, // Left
+		{ 0.0f,  0.0f,  1.0f}, // Front
+		{ 0.0f,  0.0f, -1.0f}  // Back
+	};
+
+	// An array to hold the calculated normals for each of the 8 faces
+	float n[8][3] = {
+		{ 0.707f,  0.707f,  0.707f}, { -0.707f,  0.707f,  0.707f},
+		{ -0.707f,  0.707f, -0.707f}, {  0.707f,  0.707f, -0.707f},
+		{ 0.707f, -0.707f,  0.707f}, { -0.707f, -0.707f,  0.707f},
+		{ -0.707f, -0.707f, -0.707f}, {  0.707f, -0.707f, -0.707f}
+	};
+
+	glBegin(GL_TRIANGLES);
+	// Top-Front-Right face
+	glNormal3fv(n[0]);
+	glVertex3fv(p[0]); glVertex3fv(p[4]); glVertex3fv(p[2]);
+	// Top-Front-Left face
+	glNormal3fv(n[1]);
+	glVertex3fv(p[0]); glVertex3fv(p[3]); glVertex3fv(p[4]);
+	// Top-Back-Left face
+	glNormal3fv(n[2]);
+	glVertex3fv(p[0]); glVertex3fv(p[5]); glVertex3fv(p[3]);
+	// Top-Back-Right face
+	glNormal3fv(n[3]);
+	glVertex3fv(p[0]); glVertex3fv(p[2]); glVertex3fv(p[5]);
+
+	// Bottom-Front-Right face
+	glNormal3fv(n[4]);
+	glVertex3fv(p[1]); glVertex3fv(p[2]); glVertex3fv(p[4]);
+	// Bottom-Front-Left face
+	glNormal3fv(n[5]);
+	glVertex3fv(p[1]); glVertex3fv(p[4]); glVertex3fv(p[3]);
+	// Bottom-Back-Left face
+	glNormal3fv(n[6]);
+	glVertex3fv(p[1]); glVertex3fv(p[3]); glVertex3fv(p[5]);
+	// Bottom-Back-Right face
+	glNormal3fv(n[7]);
+	glVertex3fv(p[1]); glVertex3fv(p[5]); glVertex3fv(p[2]);
+	glEnd();
+
+	glPopMatrix();
+}
+
+void drawLegs()
+{
+	// --- Material Properties for Golden Armour (for ALL leg parts) ---
+	GLfloat mat_ambient[] = { 0.45f, 0.38f, 0.1f, 1.0f };
+	GLfloat mat_diffuse[] = { 1.0f, 0.84f, 0.0f, 1.0f };
+	GLfloat mat_specular[] = { 1.0f, 1.0f, 0.8f, 1.0f };
+	GLfloat mat_shininess[] = { 100.0f };
+
+	// Apply the material properties for ALL leg parts
+	glMaterialfv(GL_FRONT, GL_AMBIENT, mat_ambient);
+	glMaterialfv(GL_FRONT, GL_DIFFUSE, mat_diffuse);
+	glMaterialfv(GL_FRONT, GL_SPECULAR, mat_specular);
+	glMaterialfv(GL_FRONT, GL_SHININESS, mat_shininess);
+
+	auto drawOneLeg = []() {
+		glPushMatrix(); // Save the state at the hip joint
+
+		// --- Part 1: Upper Leg (Thigh) ---
+		float thigh_height = 0.8f;
+		glPushMatrix();
+		glTranslatef(0.0f, -thigh_height / 2.0f, 0.0f);
+		{
+			float v[8][3] = {
+				{-0.15f,  thigh_height / 2.0f,  0.12f}, { 0.15f,  thigh_height / 2.0f,  0.12f},
+				{ 0.15f,  thigh_height / 2.0f, -0.12f}, {-0.15f,  thigh_height / 2.0f, -0.12f},
+				{-0.10f, -thigh_height / 2.0f,  0.10f}, { 0.10f, -thigh_height / 2.0f,  0.10f},
+				{ 0.10f, -thigh_height / 2.0f, -0.10f}, {-0.10f, -thigh_height / 2.0f, -0.10f}
+			};
+			glBegin(GL_QUADS);
+			glNormal3f(0.0, 0.0, 1.0); glVertex3fv(v[0]); glVertex3fv(v[1]); glVertex3fv(v[5]); glVertex3fv(v[4]);
+			glNormal3f(0.0, 0.0, -1.0); glVertex3fv(v[3]); glVertex3fv(v[2]); glVertex3fv(v[6]); glVertex3fv(v[7]);
+			glNormal3f(-1.0, 0.0, 0.0); glVertex3fv(v[0]); glVertex3fv(v[3]); glVertex3fv(v[7]); glVertex3fv(v[4]);
+			glNormal3f(1.0, 0.0, 0.0); glVertex3fv(v[1]); glVertex3fv(v[2]); glVertex3fv(v[6]); glVertex3fv(v[5]);
+			glEnd();
+		}
+		glPopMatrix();
+
+		// --- Position for the Knee Joint ---
+		glTranslatef(0.0f, -thigh_height, 0.0f);
+		glRotatef(-5.0f, 1.0f, 0.0f, 0.0f);
+
+		// --- Draw the Diamond Knee Joint ---
+		drawDiamondKneeJoint();
+
+		// --- Part 2: Lower Leg (Shin) ---
+		// MODIFIED: Reduced the downward translation to create an overlap with the knee.
+		glTranslatef(0.0f, -0.22f, 0.0f);
+
+		float shin_height = 0.7f;
+		glPushMatrix();
+		glTranslatef(0.0f, -shin_height / 2.0f, 0.0f);
+		{
+			float v[8][3] = {
+				{-0.10f,  shin_height / 2.0f,  0.10f}, { 0.10f,  shin_height / 2.0f,  0.10f},
+				{ 0.10f,  shin_height / 2.0f, -0.10f}, {-0.10f,  shin_height / 2.0f, -0.10f},
+				{-0.14f, -shin_height / 2.0f,  0.14f}, { 0.14f, -shin_height / 2.0f,  0.14f},
+				{ 0.14f, -shin_height / 2.0f, -0.14f}, {-0.14f, -shin_height / 2.0f, -0.14f}
+			};
+			glBegin(GL_QUADS);
+			glNormal3f(0.0, 0.0, 1.0); glVertex3fv(v[0]); glVertex3fv(v[1]); glVertex3fv(v[5]); glVertex3fv(v[4]);
+			glNormal3f(0.0, 0.0, -1.0); glVertex3fv(v[3]); glVertex3fv(v[2]); glVertex3fv(v[6]); glVertex3fv(v[7]);
+			glNormal3f(-1.0, 0.0, 0.0); glVertex3fv(v[0]); glVertex3fv(v[3]); glVertex3fv(v[7]); glVertex3fv(v[4]);
+			glNormal3f(1.0, 0.0, 0.0); glVertex3fv(v[1]); glVertex3fv(v[2]); glVertex3fv(v[6]); glVertex3fv(v[5]);
+			glEnd();
+		}
+		glPopMatrix();
+
+		// --- Part 3: Foot ---
+		glTranslatef(0.0f, -shin_height, 0.0f);
+		glRotatef(5.0f, 1.0f, 0.0f, 0.0f);
+
+		glPushMatrix();
+		{
+			float v[10][3] = {
+				{-0.12f, 0.0f,  0.14f}, {0.12f, 0.0f,  0.14f},
+				{0.12f, 0.0f, -0.25f}, {-0.12f, 0.0f, -0.25f},
+				{-0.12f, -0.15f,  0.14f}, {0.12f, -0.15f,  0.14f},
+				{0.12f, -0.15f, -0.25f}, {-0.12f, -0.15f, -0.25f},
+				{0.0f, -0.15f, 0.4f},
+				{0.0f, -0.15f, -0.4f}
+			};
+
+			glBegin(GL_QUADS);
+			glNormal3f(0.0, 1.0, 0.0); glVertex3fv(v[0]); glVertex3fv(v[1]); glVertex3fv(v[2]); glVertex3fv(v[3]);
+			glNormal3f(0.0, -1.0, 0.0); glVertex3fv(v[4]); glVertex3fv(v[7]); glVertex3fv(v[6]); glVertex3fv(v[5]);
+			glNormal3f(0.0, 0.0, -1.0); glVertex3fv(v[3]); glVertex3fv(v[2]); glVertex3fv(v[6]); glVertex3fv(v[7]);
+			glNormal3f(-1.0, 0.0, 0.0); glVertex3fv(v[0]); glVertex3fv(v[3]); glVertex3fv(v[7]); glVertex3fv(v[4]);
+			glNormal3f(1.0, 0.0, 0.0); glVertex3fv(v[1]); glVertex3fv(v[2]); glVertex3fv(v[6]); glVertex3fv(v[5]);
+			glEnd();
+
+			glBegin(GL_TRIANGLES);
+			glNormal3f(0.0, 0.0, 1.0); glVertex3fv(v[0]); glVertex3fv(v[1]); glVertex3f(0.0, 0.0, 0.25);
+			glNormal3f(0.7, -0.3, 0.7); glVertex3fv(v[1]); glVertex3fv(v[8]); glVertex3fv(v[5]);
+			glNormal3f(-0.7, -0.3, 0.7); glVertex3fv(v[0]); glVertex3fv(v[4]); glVertex3fv(v[8]);
+			glNormal3f(0.7, -0.3, -0.7); glVertex3fv(v[2]); glVertex3fv(v[6]); glVertex3fv(v[9]);
+			glNormal3f(-0.7, -0.3, -0.7); glVertex3fv(v[3]); glVertex3fv(v[9]); glVertex3fv(v[7]);
+			glEnd();
+		}
+		glPopMatrix();
+
+		glPopMatrix(); // Restore to the hip joint state
+		};
+
+	// --- Draw Left Leg ---
+	glPushMatrix();
+	glTranslatef(-0.18f, -1.0f, 0.0f);
+	drawOneLeg();
+	glPopMatrix();
+
+	// --- Draw Right Leg ---
+	glPushMatrix();
+	glTranslatef(0.18f, -1.0f, 0.0f);
+	drawOneLeg();
+	glPopMatrix();
+}
+
+// --- UPDATED display function ---
 // --- UPDATED display function ---
 void display(float deltaTime)
 {
@@ -917,6 +1095,8 @@ void display(float deltaTime)
 	glEnable(GL_LIGHT0);
 	glEnable(GL_COLOR_MATERIAL);
 	glShadeModel(GL_SMOOTH);
+
+	glEnable(GL_NORMALIZE); // <-- ADD THIS LINE to fix lighting on scaled objects
 
 	GLfloat light_pos[] = { 5.0f, 5.0f, 5.0f, 1.0f };
 	glLightfv(GL_LIGHT0, GL_POSITION, light_pos);
@@ -939,6 +1119,7 @@ void display(float deltaTime)
 	drawSmoothChest();
 	drawWaistWithVerticalLines();
 	drawSmoothLowerBodyAndSkirt();
+	drawLegs();
 
 	// Use glPolygonOffset to draw the belt on top of the skirt
 	glEnable(GL_POLYGON_OFFSET_FILL);
@@ -949,6 +1130,7 @@ void display(float deltaTime)
 	drawArmorCollar();
 	drawSmoothArms();
 	drawShoulderPads3D();
+	drawBackSashes();
 
 	glPushMatrix();
 	drawNeck();
