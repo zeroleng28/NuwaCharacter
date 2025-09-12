@@ -19,4 +19,15 @@
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
+  <ItemGroup>
+    <Image Include="Textures\Gold.bmp">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Textures\Sky.bmp">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Textures\Red.bmp">
+      <Filter>Resource Files</Filter>
+    </Image>
+  </ItemGroup>
 </Project>

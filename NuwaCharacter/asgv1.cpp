@@ -39,6 +39,7 @@ GLfloat g_animatedLightPos[4];
 
 GLuint g_fireTextureID = 0;
 GLuint g_goldTextureID = 0;
+GLuint g_redTextureID = 0;
 
 // --- NEW variables for Delta Time calculation ---
 LARGE_INTEGER g_timer_frequency;
@@ -720,7 +721,8 @@ void drawArmorCollar()
 	// No more: glColor3f(1.0f, 0.84f, 0.0f); float neck_profile[][2] = {{0.17f, 0.88f}, {0.17f, 0.95f}}; drawLathedObject(neck_profile, 2, 16);
 }
 
-void drawBackSashes() {
+void drawBackSashes()
+{
 	const float PI = 3.14159f;
 	GLUquadric* quad = gluNewQuadric();
 
@@ -735,12 +737,8 @@ void drawBackSashes() {
 	float belt_back_radius = 0.18f;
 	float start_x_offset = base_sash_width / 2.0f;
 
-	// --- Key values for the new, correct behaviour ---
-	// Increased downward tilt to make the cloth kick out more aggressively.
-	const float TILT_DOWNWARD_X = 25.0f; // Increased from 15.0f
-	// The angle for flaring the sashes out to the sides
+	const float TILT_DOWNWARD_X = 25.0f;
 	const float FLARE_SIDEWAYS_Y = 35.0f;
-	// A tiny physical gap to ensure the cloth renders on the outside
 	const float SURFACE_OFFSET = 0.02f;
 
 	// A reusable function to draw one sash
@@ -756,38 +754,49 @@ void drawBackSashes() {
 		glRotatef(TILT_DOWNWARD_X, 1.0f, 0.0f, 0.0f);
 
 		// Set cloth and bead colours
-		glColor3f(0.9f, 0.5f, 0.0f);
+		glColor3f(1.0f, 1.0f, 1.0f); // Set to white so texture appears in its true colours
 
 		// 3. DRAW THE CLOTH with the physical offset and new curve.
+
+		// --- NEW: Enable and bind the red texture ---
+		glEnable(GL_TEXTURE_2D);
+		glBindTexture(GL_TEXTURE_2D, g_redTextureID);
+		// Use GL_MODULATE to allow lighting to affect the texture
+		glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+
 		glBegin(GL_QUAD_STRIP);
 		for (int i = 0; i <= segments; ++i) {
 			float t = (float)i / segments;
 			float y = -t * sash_length;
 
-			// NEW Z-CURVE CALCULATION:
-			// This makes the sash project outwards more strongly at the beginning (small 't'),
-			// then curve backwards more gently as it goes down.
-			// Using a power function (e.g., t^0.5 or 1-cos(t*PI/2)) can give different curve feels.
-			// Let's try a softer, more exponential outward curve.
-			float z = SURFACE_OFFSET + (-0.5f * pow(t, 2.0f)); // Starts at offset, then curves back gently. Adjust 0.5f to control curvature.
+			float z = SURFACE_OFFSET + (-0.5f * pow(t, 2.0f));
 
 			float current_width = base_sash_width + t * flare_factor;
 			float x_offset = sin(t * PI) * (isLeftSash ? -0.2f : 0.2f);
 
 			glNormal3f(isLeftSash ? 0.45f : -0.45f, 0.5f, -0.75f);
 
+			// --- NEW: Add Texture Coordinates ---
+			// U=0 for the left edge, U=1 for the right edge of the strip.
+			// V=t follows the length of the sash.
+			glTexCoord2f(0.0f, t);
 			glVertex3f(x_offset - current_width * 0.5f, y, z);
+
+			glTexCoord2f(1.0f, t);
 			glVertex3f(x_offset + current_width * 0.5f, y, z);
 		}
 		glEnd();
 
+		// --- NEW: Disable texturing so it doesn't affect the beads ---
+		glDisable(GL_TEXTURE_2D);
+
+
 		// Draw the beads
-		glColor3f(0.9f, 0.7f, 0.1f);
+		glColor3f(0.9f, 0.7f, 0.1f); // Set colour back to gold for the beads
 		for (int i = 1; i <= 5; ++i) {
 			glPushMatrix();
 			float t = i * 0.2f;
 			float y = -sash_length * t;
-			// Use the same new Z-curve for beads
 			float z = SURFACE_OFFSET + (-0.5f * pow(t, 2.0f));
 
 			float current_width = base_sash_width + t * flare_factor;
@@ -799,7 +808,6 @@ void drawBackSashes() {
 			gluSphere(quad, sphere_radius, 12, 12);
 			glPopMatrix();
 		}
-
 		glPopMatrix();
 		};
 
@@ -1588,6 +1596,12 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow)
 	g_goldTextureID = loadTextureBMP("Textures/Gold.bmp");
 	if (g_goldTextureID == 0) {
 		MessageBox(hWnd, "Could not load Textures/Gold.bmp. Make sure the file is in the Textures folder.", "Texture Error", MB_OK | MB_ICONERROR);
+		return -1;
+	}
+
+	g_redTextureID = loadTextureBMP("Textures/Red.bmp");
+	if (g_redTextureID == 0) {
+		MessageBox(hWnd, "Could not load Textures/Red.bmp. Make sure the file is in the Textures folder.", "Texture Error", MB_OK | MB_ICONERROR);
 		return -1;
 	}
 
