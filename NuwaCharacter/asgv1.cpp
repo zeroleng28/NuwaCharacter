@@ -276,58 +276,64 @@ void drawCuboid(float width, float height, float depth)
 	glEnd();
 }
 
-void drawShoulderPads3D() {
-	glColor3f(0.9f, 0.7f, 0.1f);
-	float padDepth = 0.25f;
-	float d = padDepth / 2.0f;
+void drawCurvedShoulderPads()
+{
+	// Common material for the shoulder pads
+	GLfloat mat_ambient[] = { 0.45f, 0.38f, 0.1f, 1.0f };
+	GLfloat mat_diffuse[] = { 1.0f, 0.84f, 0.0f, 1.0f };
+	GLfloat mat_specular[] = { 1.0f, 1.0f, 0.8f, 1.0f };
+	GLfloat mat_shininess[] = { 100.0f };
+	glMaterialfv(GL_FRONT, GL_AMBIENT, mat_ambient);
+	glMaterialfv(GL_FRONT, GL_DIFFUSE, mat_diffuse);
+	glMaterialfv(GL_FRONT, GL_SPECULAR, mat_specular);
+	glMaterialfv(GL_FRONT, GL_SHININESS, mat_shininess);
 
-	// --- Left Shoulder Pad ---
-	glPushMatrix();
-	glTranslatef(-0.45f, 0.73f, 0.0f);
-	glRotatef(10.0f, 0.0f, 0.0f, 1.0f);
-	glBegin(GL_QUADS);
-	float v[8][3] = {
-		{-0.3f, 0.2f, d}, {0.3f, 0.2f, d}, {0.4f, -0.1f, d}, {-0.4f, -0.1f, d},
-		{-0.3f, 0.2f, -d}, {0.3f, 0.2f, -d}, {0.4f, -0.1f, -d}, {-0.4f, -0.1f, -d}
-	};
-	glNormal3f(0.0f, 0.0f, 1.0f);
-	glVertex3fv(v[0]); glVertex3fv(v[1]); glVertex3fv(v[2]); glVertex3fv(v[3]);
-	glNormal3f(0.0f, 0.0f, -1.0f);
-	glVertex3fv(v[4]); glVertex3fv(v[7]); glVertex3fv(v[6]); glVertex3fv(v[5]);
-	glNormal3f(0.0f, 1.0f, 0.0f);
-	glVertex3fv(v[0]); glVertex3fv(v[4]); glVertex3fv(v[5]); glVertex3fv(v[1]);
-	glNormal3f(0.0f, -1.0f, 0.0f);
-	glVertex3fv(v[3]); glVertex3fv(v[2]); glVertex3fv(v[6]); glVertex3fv(v[7]);
-	glNormal3f(0.7f, 0.3f, 0.0f);
-	glVertex3fv(v[1]); glVertex3fv(v[5]); glVertex3fv(v[6]); glVertex3fv(v[2]);
-	glNormal3f(-0.7f, 0.3f, 0.0f);
-	glVertex3fv(v[0]); glVertex3fv(v[3]); glVertex3fv(v[7]); glVertex3fv(v[4]);
-	glEnd();
-	glPopMatrix();
+	// Lambda function to draw one shoulder pad (left or right)
+	auto drawOneShoulder = [&](bool isLeft) {
+		glPushMatrix();
 
-	// --- Right Shoulder Pad ---
-	glPushMatrix();
-	glTranslatef(0.45f, 0.73f, 0.0f);
-	glRotatef(-10.0f, 0.0f, 0.0f, 1.0f);
-	glBegin(GL_QUADS);
-	float v2[8][3] = {
-		{-0.3f, 0.2f, d}, {0.3f, 0.2f, d}, {0.4f, -0.1f, d}, {-0.4f, -0.1f, d},
-		{-0.3f, 0.2f, -d}, {0.3f, 0.2f, -d}, {0.4f, -0.1f, -d}, {-0.4f, -0.1f, -d}
-	};
-	glNormal3f(0.0f, 0.0f, 1.0f);
-	glVertex3fv(v2[0]); glVertex3fv(v2[1]); glVertex3fv(v2[2]); glVertex3fv(v2[3]);
-	glNormal3f(0.0f, 0.0f, -1.0f);
-	glVertex3fv(v2[4]); glVertex3fv(v2[7]); glVertex3fv(v2[6]); glVertex3fv(v2[5]);
-	glNormal3f(0.0f, 1.0f, 0.0f);
-	glVertex3fv(v2[0]); glVertex3fv(v2[4]); glVertex3fv(v2[5]); glVertex3fv(v2[1]);
-	glNormal3f(0.0f, -1.0f, 0.0f);
-	glVertex3fv(v2[3]); glVertex3fv(v2[2]); glVertex3fv(v2[6]); glVertex3fv(v2[7]);
-	glNormal3f(0.7f, 0.3f, 0.0f);
-	glVertex3fv(v2[1]); glVertex3fv(v2[5]); glVertex3fv(v2[6]); glVertex3fv(v2[2]);
-	glNormal3f(-0.7f, 0.3f, 0.0f);
-	glVertex3fv(v2[0]); glVertex3fv(v2[3]); glVertex3fv(v2[7]); glVertex3fv(v2[4]);
-	glEnd();
-	glPopMatrix();
+		// 1. Position the entire shoulder pad assembly relative to the body
+		glTranslatef(isLeft ? -0.38f : 0.38f, 0.7f, 0.0f); // Adjust Y-pos to sit on the shoulder
+
+		// 2. Initial rotation to angle the entire pauldron outwards and downwards
+		glRotatef(isLeft ? 20.0f : -20.0f, 0.0f, 0.0f, 1.0f); // Angle outwards
+		glRotatef(-25.0f, 1.0f, 0.0f, 0.0f);                  // Tilt downwards
+
+		// Set color for the dark trim
+		glColor3f(0.5f, 0.35f, 0.05f); // Darker gold
+
+		// --- Bottom Layer (Largest, Darker Panel) ---
+		glPushMatrix();
+		glTranslatef(0.0f, 0.0f, -0.05f); // Slightly behind the main layer
+		glScalef(1.2f, 0.8f, 0.1f);      // Wider and slightly thinner
+		glRotatef(isLeft ? 10.0f : -10.0f, 0.0f, 1.0f, 0.0f); // Slight curve for this layer
+		drawCuboid(0.4f, 0.2f, 1.0f);    // Base dimensions (width, height, depth)
+		glPopMatrix();
+
+		// Set color for the main gold panels
+		glColor3f(1.0f, 0.84f, 0.0f); // Bright gold
+
+		// --- Middle Layer (Main Panel) ---
+		glPushMatrix();
+		glTranslatef(0.0f, 0.02f, 0.0f); // Slightly above and forward from the bottom layer
+		glScalef(1.0f, 0.9f, 0.12f);    // Main size
+		glRotatef(isLeft ? -5.0f : 5.0f, 0.0f, 1.0f, 0.0f); // Slight curve for this layer
+		drawCuboid(0.4f, 0.2f, 1.0f);
+		glPopMatrix();
+
+		// --- Top Layer (Smaller, More Angular Panel) ---
+		glPushMatrix();
+		glTranslatef(0.0f, 0.05f, 0.05f); // Even further up and forward
+		glScalef(0.8f, 0.8f, 0.15f);    // Smaller, slightly thicker
+		drawCuboid(0.4f, 0.2f, 1.0f);
+		glPopMatrix();
+
+		glPopMatrix(); // Restore matrix state for drawing the next shoulder
+		};
+
+	// Draw both shoulders
+	drawOneShoulder(true);  // Left shoulder
+	drawOneShoulder(false); // Right shoulder
 }
 
 void drawLathedObject(float profile[][2], int num_points, int sides)
@@ -714,6 +720,95 @@ void drawArmorCollar()
 	// No more: glColor3f(1.0f, 0.84f, 0.0f); float neck_profile[][2] = {{0.17f, 0.88f}, {0.17f, 0.95f}}; drawLathedObject(neck_profile, 2, 16);
 }
 
+void drawBackSashes() {
+	const float PI = 3.14159f;
+	GLUquadric* quad = gluNewQuadric();
+
+	// --- Parameters for cloth shape and position ---
+	float base_sash_width = 0.18f;
+	float sash_length = 2.5f;
+	float flare_factor = 1.2f;
+	int   segments = 30;
+
+	// Anchor point on the belt
+	float belt_top_back_y = -0.05f;
+	float belt_back_radius = 0.18f;
+	float start_x_offset = base_sash_width / 2.0f;
+
+	// --- Key values for the new, correct behaviour ---
+	// Increased downward tilt to make the cloth kick out more aggressively.
+	const float TILT_DOWNWARD_X = 25.0f; // Increased from 15.0f
+	// The angle for flaring the sashes out to the sides
+	const float FLARE_SIDEWAYS_Y = 35.0f;
+	// A tiny physical gap to ensure the cloth renders on the outside
+	const float SURFACE_OFFSET = 0.02f;
+
+	// A reusable function to draw one sash
+	auto drawOneSash = [&](bool isLeftSash) {
+		glPushMatrix();
+		// 1. ANCHOR DIRECTLY ON THE BODY'S SURFACE at the belt line.
+		glTranslatef(isLeftSash ? -start_x_offset : +start_x_offset,
+			belt_top_back_y,
+			-belt_back_radius);
+
+		// 2. ROTATE to flare sideways and then tilt down and away from the body.
+		glRotatef(isLeftSash ? +FLARE_SIDEWAYS_Y : -FLARE_SIDEWAYS_Y, 0.0f, 1.0f, 0.0f);
+		glRotatef(TILT_DOWNWARD_X, 1.0f, 0.0f, 0.0f);
+
+		// Set cloth and bead colours
+		glColor3f(0.9f, 0.5f, 0.0f);
+
+		// 3. DRAW THE CLOTH with the physical offset and new curve.
+		glBegin(GL_QUAD_STRIP);
+		for (int i = 0; i <= segments; ++i) {
+			float t = (float)i / segments;
+			float y = -t * sash_length;
+
+			// NEW Z-CURVE CALCULATION:
+			// This makes the sash project outwards more strongly at the beginning (small 't'),
+			// then curve backwards more gently as it goes down.
+			// Using a power function (e.g., t^0.5 or 1-cos(t*PI/2)) can give different curve feels.
+			// Let's try a softer, more exponential outward curve.
+			float z = SURFACE_OFFSET + (-0.5f * pow(t, 2.0f)); // Starts at offset, then curves back gently. Adjust 0.5f to control curvature.
+
+			float current_width = base_sash_width + t * flare_factor;
+			float x_offset = sin(t * PI) * (isLeftSash ? -0.2f : 0.2f);
+
+			glNormal3f(isLeftSash ? 0.45f : -0.45f, 0.5f, -0.75f);
+
+			glVertex3f(x_offset - current_width * 0.5f, y, z);
+			glVertex3f(x_offset + current_width * 0.5f, y, z);
+		}
+		glEnd();
+
+		// Draw the beads
+		glColor3f(0.9f, 0.7f, 0.1f);
+		for (int i = 1; i <= 5; ++i) {
+			glPushMatrix();
+			float t = i * 0.2f;
+			float y = -sash_length * t;
+			// Use the same new Z-curve for beads
+			float z = SURFACE_OFFSET + (-0.5f * pow(t, 2.0f));
+
+			float current_width = base_sash_width + t * flare_factor;
+			float x_offset = sin(t * PI) * (isLeftSash ? -0.2f : 0.2f);
+			float sphere_radius = 0.06f;
+
+			float bead_x = x_offset + (isLeftSash ? +current_width * 0.5f - 0.04f : -current_width * 0.5f + 0.04f);
+			glTranslatef(bead_x, y, z + 0.02f);
+			gluSphere(quad, sphere_radius, 12, 12);
+			glPopMatrix();
+		}
+
+		glPopMatrix();
+		};
+
+	drawOneSash(true);   // Draw the left sash
+	drawOneSash(false);  // Draw the right sash
+
+	gluDeleteQuadric(quad);
+}
+
 void drawSphere(float r, int slices, int stacks)
 {
 	const int MAX_STACKS = 50; // adjust if needed
@@ -910,90 +1005,6 @@ void drawHalo()
 
 	glPopMatrix();
 	glEnable(GL_LIGHTING);
-}
-
-void drawBackSashes()
-{
-	const float PI = 3.14159f;
-	GLUquadric* quad = gluNewQuadric();
-
-	// --- Parameters for cloth shape and position ---
-	float base_sash_width = 0.18f;
-	float sash_length = 2.5f;
-	float flare_factor = 1.2f;
-	int   segments = 30;
-
-	// Anchor point on the belt
-	float belt_top_back_y = -0.05f;
-	float belt_back_radius = 0.18f;
-	float start_x_offset = base_sash_width / 2.0f;
-
-	// --- Key values for the new, correct behaviour ---
-	// Increased downward tilt to make the cloth kick out more aggressively.
-	const float TILT_DOWNWARD_X = 25.0f; // Increased from 15.0f
-	// The angle for flaring the sashes out to the sides
-	const float FLARE_SIDEWAYS_Y = 35.0f;
-	// A tiny physical gap to ensure the cloth renders on the outside
-	const float SURFACE_OFFSET = 0.02f;
-
-	// A reusable function to draw one sash
-	auto drawOneSash = [&](bool isLeftSash) {
-		glPushMatrix();
-		// 1. ANCHOR DIRECTLY ON THE BODY'S SURFACE at the belt line.
-		glTranslatef(isLeftSash ? -start_x_offset : +start_x_offset,
-			belt_top_back_y,
-			-belt_back_radius);
-
-		// 2. ROTATE to flare sideways and then tilt down and away from the body.
-		glRotatef(isLeftSash ? +FLARE_SIDEWAYS_Y : -FLARE_SIDEWAYS_Y, 0.0f, 1.0f, 0.0f);
-		glRotatef(TILT_DOWNWARD_X, 1.0f, 0.0f, 0.0f);
-
-		// Set cloth and bead colours
-		glColor3f(0.9f, 0.5f, 0.0f);
-
-		// 3. DRAW THE CLOTH with the physical offset and new curve.
-		glBegin(GL_QUAD_STRIP);
-		for (int i = 0; i <= segments; ++i) {
-			float t = (float)i / segments;
-			float y = -t * sash_length;
-
-			// NEW Z-CURVE CALCULATION:
-			// This makes the sash project outwards more strongly at the beginning (small 't'),
-			// then curve backwards more gently as it goes down.
-			// Using a power function (e.g., t^0.5 or 1-cos(t*PI/2)) can give different curve feels.
-			// Let's try a softer, more exponential outward curve.
-			float z = SURFACE_OFFSET + (-0.5f * pow(t, 2.0f)); // Starts at offset, then curves back gently. Adjust 0.5f to control curvature.
-
-			float current_width = base_sash_width + t * flare_factor;
-			float x_offset = sin(t * PI) * (isLeftSash ? -0.2f : 0.2f);
-
-			glNormal3f(isLeftSash ? 0.45f : -0.45f, 0.5f, -0.75f);
-
-			glVertex3f(x_offset - current_width * 0.5f, y, z);
-			glVertex3f(x_offset + current_width * 0.5f, y, z);
-		}
-		glEnd();
-
-		// Draw the beads
-		glColor3f(0.9f, 0.7f, 0.1f);
-		for (int i = 1; i <= 5; ++i) {
-			glPushMatrix();
-			float t = i * 0.2f;
-			float y = -sash_length * t;
-			// Use the same new Z-curve for beads
-			float z = SURFACE_OFFSET + (-0.5f * pow(t, 2.0f));
-
-			float current_width = base_sash_width + t * flare_factor;
-			float x_offset = sin(t * PI) * (isLeftSash ? -0.2f : 0.2f);
-			float sphere_radius = 0.06f;
-
-			float bead_x = x_offset + (isLeftSash ? +current_width * 0.5f - 0.04f : -current_width * 0.5f + 0.04f);
-			glTranslatef(bead_x, y, z + 0.02f);
-			gluSphere(quad, sphere_radius, 12, 12);
-			glPopMatrix();
-		}
-		glPopMatrix();
-		};
 }
 
 void updateParticles(float deltaTime)
@@ -1508,7 +1519,7 @@ void display(float deltaTime)
 
 	drawArmorCollar();
 	drawSmoothArms();
-	drawShoulderPads3D();
+	drawCurvedShoulderPads();
 	drawBackSashes();
 
 	glPushMatrix();
