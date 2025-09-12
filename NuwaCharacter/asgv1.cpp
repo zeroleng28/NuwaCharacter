@@ -40,6 +40,7 @@ GLfloat g_animatedLightPos[4];
 GLuint g_fireTextureID = 0;
 GLuint g_goldTextureID = 0;
 GLuint g_redTextureID = 0;
+GLuint g_skyTextureID = 0;
 
 // --- NEW variables for Delta Time calculation ---
 LARGE_INTEGER g_timer_frequency;
@@ -1444,6 +1445,50 @@ void drawLegs()
 	glPopMatrix();
 }
 
+void drawSkyBackground(int winW, int winH)
+{
+	// Save matrices
+	glMatrixMode(GL_PROJECTION);
+	glPushMatrix();
+	glLoadIdentity();
+	glOrtho(0, winW, 0, winH, -1, 1);   // 2D screen space
+
+	glMatrixMode(GL_MODELVIEW);
+	glPushMatrix();
+	glLoadIdentity();
+
+	// Draw without lighting/depth and don't write depth
+	glDisable(GL_LIGHTING);
+	glDisable(GL_DEPTH_TEST);
+	glDepthMask(GL_FALSE);
+
+	glEnable(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, g_skyTextureID);
+	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+
+	glBegin(GL_QUADS);
+	// NOTE: If your BMP shows upside-down, swap the V coords (0 ↔ 1)
+	glTexCoord2f(0.0f, 0.0f); glVertex2f(0.0f, 0.0f);
+	glTexCoord2f(1.0f, 0.0f); glVertex2f((float)winW, 0.0f);
+	glTexCoord2f(1.0f, 1.0f); glVertex2f((float)winW, (float)winH);
+	glTexCoord2f(0.0f, 1.0f); glVertex2f(0.0f, (float)winH);
+	glEnd();
+
+	glDisable(GL_TEXTURE_2D);
+
+	// Restore state
+	glDepthMask(GL_TRUE);
+	glEnable(GL_DEPTH_TEST);
+	glEnable(GL_LIGHTING);
+
+	glPopMatrix(); // MODELVIEW
+	glMatrixMode(GL_PROJECTION);
+	glPopMatrix();
+	glMatrixMode(GL_MODELVIEW); // leave modelview active
+}
+
 void display(float deltaTime)
 {
 	// --- NEW: Update particle system at the start of the frame ---
@@ -1474,20 +1519,22 @@ void display(float deltaTime)
 
 	glClearColor(1.0, 1.0, 1.0, 0.0);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	// Draw the 2D sky background first
+	drawSkyBackground(800, 600);   // <-- match your window size
+
+	// Now set up lights/camera and draw 3D as usual
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_LIGHTING);
 	glEnable(GL_LIGHT0);
 	glEnable(GL_COLOR_MATERIAL);
 	glShadeModel(GL_SMOOTH);
-
 	glEnable(GL_NORMALIZE);
 
-	// --- Main "Key Light" ---
 	glLightfv(GL_LIGHT0, GL_POSITION, g_animatedLightPos);
-	GLfloat ambient_light[] = { 0.5f, 0.5f, 0.5f, 1.0f }; // Using your brighter value
+	GLfloat ambient_light[] = { 0.5f, 0.5f, 0.5f, 1.0f };
 	glLightModelfv(GL_LIGHT_MODEL_AMBIENT, ambient_light);
 
-	// --- Second "Fill Light" ---
 	glEnable(GL_LIGHT1);
 	GLfloat light1_pos[] = { 0.0f, 2.0f, 5.0f, 1.0f };
 	GLfloat light1_diffuse[] = { 0.4f, 0.4f, 0.4f, 1.0f };
@@ -1504,7 +1551,6 @@ void display(float deltaTime)
 	glLoadIdentity();
 
 	glTranslatef(0.0f, -0.5f, zoomFactor);
-
 	glRotatef(rotateX, 1.0f, 0.0f, 0.0f);
 	glRotatef(rotateY, 0.0f, 1.0f, 0.0f);
 
@@ -1596,6 +1642,12 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow)
 	g_redTextureID = loadTextureBMP("Textures/Red.bmp");
 	if (g_redTextureID == 0) {
 		MessageBox(hWnd, "Could not load Textures/Red.bmp. Make sure the file is in the Textures folder.", "Texture Error", MB_OK | MB_ICONERROR);
+		return -1;
+	}
+
+	g_skyTextureID = loadTextureBMP("Textures/Sky.bmp");
+	if (g_skyTextureID == 0) {
+		MessageBox(hWnd, "Could not load Textures/Sky.bmp. Make sure the file is in the Textures folder.", "Texture Error", MB_OK | MB_ICONERROR);
 		return -1;
 	}
 
