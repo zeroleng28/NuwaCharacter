@@ -385,7 +385,7 @@ void drawLathedObject(float profile[][2], int num_points, int sides)
 	}
 }
 
-void drawHand(bool isLeftHand)
+/* void drawHand(bool isLeftHand)
 {
 	glColor3f(1.0f, 0.84f, 0.0f); // Golden yellow
 
@@ -454,6 +454,210 @@ void drawHand(bool isLeftHand)
 	drawCuboid(0.037f, thumb2_len, 0.037f);
 
 	glPopMatrix(); // Restore to the wrist's state
+} */
+
+// --- Low-poly human hand (game-style), shape-only update ---
+// Keeps the same local origin & overall size so your arm code doesn't need changes.
+static void drawTrapezoidPrism(float w_back, float w_wrist, float h, float d) {
+	// back = knuckle side, wrist = forearm side
+	float hb = h * 0.5f;
+	float db = d * 0.5f;
+	float wb = w_back * 0.5f;
+	float ww = w_wrist * 0.5f;
+
+	glBegin(GL_QUADS);
+	// Top
+	glNormal3f(0, 1, 0);
+	glVertex3f(-ww, hb, db); glVertex3f(ww, hb, db);
+	glVertex3f(wb, hb, -db); glVertex3f(-wb, hb, -db);
+	// Bottom
+	glNormal3f(0, -1, 0);
+	glVertex3f(-ww, -hb, db); glVertex3f(-wb, -hb, -db);
+	glVertex3f(wb, -hb, -db); glVertex3f(ww, -hb, db);
+	// Front (palm)
+	glNormal3f(0, 0, 1);
+	glVertex3f(-ww, -hb, db); glVertex3f(ww, -hb, db);
+	glVertex3f(ww, hb, db); glVertex3f(-ww, hb, db);
+	// Back (knuckles)
+	glNormal3f(0, 0, -1);
+	glVertex3f(-wb, -hb, -db); glVertex3f(-wb, hb, -db);
+	glVertex3f(wb, hb, -db); glVertex3f(wb, -hb, -db);
+	// Left
+	glNormal3f(-1, 0, 0);
+	glVertex3f(-ww, -hb, db); glVertex3f(-ww, hb, db);
+	glVertex3f(-wb, hb, -db); glVertex3f(-wb, -hb, -db);
+	// Right
+	glNormal3f(1, 0, 0);
+	glVertex3f(ww, -hb, db); glVertex3f(wb, -hb, -db);
+	glVertex3f(wb, hb, -db); glVertex3f(ww, hb, db);
+	glEnd();
+}
+
+static void drawBox(float w, float h, float d) { // small helper
+	float hw = w * 0.5f, hh = h * 0.5f, hd = d * 0.5f;
+	glBegin(GL_QUADS);
+	glNormal3f(0, 0, 1);
+	glVertex3f(-hw, -hh, hd); glVertex3f(hw, -hh, hd); glVertex3f(hw, hh, hd); glVertex3f(-hw, hh, hd);
+	glNormal3f(0, 0, -1);
+	glVertex3f(-hw, -hh, -hd); glVertex3f(-hw, hh, -hd); glVertex3f(hw, hh, -hd); glVertex3f(hw, -hh, -hd);
+	glNormal3f(0, 1, 0);
+	glVertex3f(-hw, hh, -hd); glVertex3f(-hw, hh, hd); glVertex3f(hw, hh, hd); glVertex3f(hw, hh, -hd);
+	glNormal3f(0, -1, 0);
+	glVertex3f(-hw, -hh, -hd); glVertex3f(hw, -hh, -hd); glVertex3f(hw, -hh, hd); glVertex3f(-hw, -hh, hd);
+	glNormal3f(1, 0, 0);
+	glVertex3f(hw, -hh, -hd); glVertex3f(hw, hh, -hd); glVertex3f(hw, hh, hd); glVertex3f(hw, -hh, hd);
+	glNormal3f(-1, 0, 0);
+	glVertex3f(-hw, -hh, -hd); glVertex3f(-hw, -hh, hd); glVertex3f(-hw, hh, hd); glVertex3f(-hw, hh, -hd);
+	glEnd();
+}
+
+// ---------- helpers ----------
+static void box6(float w, float h, float d) { // hard-edged box
+	float x = w * 0.5f, y = h * 0.5f, z = d * 0.5f;
+	glBegin(GL_QUADS);
+	glNormal3f(0, 0, 1);  glVertex3f(-x, -y, z); glVertex3f(x, -y, z); glVertex3f(x, y, z); glVertex3f(-x, y, z);
+	glNormal3f(0, 0, -1); glVertex3f(-x, -y, -z); glVertex3f(-x, y, -z); glVertex3f(x, y, -z); glVertex3f(x, -y, -z);
+	glNormal3f(0, 1, 0);  glVertex3f(-x, y, -z); glVertex3f(-x, y, z); glVertex3f(x, y, z); glVertex3f(x, y, -z);
+	glNormal3f(0, -1, 0); glVertex3f(-x, -y, -z); glVertex3f(x, -y, -z); glVertex3f(x, -y, z); glVertex3f(-x, -y, z);
+	glNormal3f(1, 0, 0);  glVertex3f(x, -y, -z); glVertex3f(x, y, -z); glVertex3f(x, y, z); glVertex3f(x, -y, z);
+	glNormal3f(-1, 0, 0); glVertex3f(-x, -y, -z); glVertex3f(-x, -y, z); glVertex3f(-x, y, z); glVertex3f(-x, y, -z);
+	glEnd();
+}
+
+static void drawPalmWedge(float wKnuckle, float wWrist, float thick, float depth)
+{
+	float hk = thick * 0.5f;
+	float dz = depth * 0.5f;
+	float wk = wKnuckle * 0.5f;
+	float ww = wWrist * 0.5f;
+
+	glBegin(GL_QUADS);
+	// top 
+	glNormal3f(0, 1, 0);
+	glVertex3f(-ww, hk, dz);
+	glVertex3f(ww, hk, dz);
+	glVertex3f(wk, hk * 0.7f, -dz); 
+	glVertex3f(-wk, hk * 0.7f, -dz);
+
+	// bottom
+	glNormal3f(0, -1, 0);
+	glVertex3f(-ww, -hk, dz);
+	glVertex3f(-wk, -hk, -dz);
+	glVertex3f(wk, -hk, -dz);
+	glVertex3f(ww, -hk, dz);
+
+	// front 
+	glNormal3f(0, 0, 1);
+	glVertex3f(-ww, -hk, dz);
+	glVertex3f(ww, -hk, dz);
+	glVertex3f(ww, hk, dz);
+	glVertex3f(-ww, hk, dz);
+
+	// back 
+	glNormal3f(0, 0, -1);
+	glVertex3f(-wk, -hk, -dz);
+	glVertex3f(-wk, hk * 0.7f, -dz);
+	glVertex3f(wk, hk * 0.7f, -dz);
+	glVertex3f(wk, -hk, -dz);
+
+	// left
+	glNormal3f(-1, 0, 0);
+	glVertex3f(-ww, -hk, dz);
+	glVertex3f(-ww, hk, dz);
+	glVertex3f(-wk, hk * 0.7f, -dz);
+	glVertex3f(-wk, -hk, -dz);
+
+	// right
+	glNormal3f(1, 0, 0);
+	glVertex3f(ww, -hk, dz);
+	glVertex3f(wk, -hk, -dz);
+	glVertex3f(wk, hk * 0.7f, -dz);
+	glVertex3f(ww, hk, dz);
+	glEnd();
+}
+
+// ---------- main ----------
+void drawHand(bool isLeftHand)
+{
+	glColor3f(1.0f, 0.84f, 0.0f); // gold
+
+	glPushMatrix();
+	// keep your wrist anchor the same
+	glTranslatef(0.0f, -0.05f, 0.0f);
+	glRotatef(10.0f, 1, 0, 0); // small palm pitch
+
+	// ===== 1) Palm (wedge like the grey ref) =====
+	const float PALM_W_K = 0.205f;  // width at knuckles (wider)
+	const float PALM_W_W = 0.155f;  // width at wrist (narrower)
+	const float PALM_H = 0.14f;   // thickness
+	const float PALM_D = 0.05f;  // depth
+	drawPalmWedge(PALM_W_K, PALM_W_W, PALM_H, PALM_D); // slight downhill to fingers
+
+	// knuckle ridge: thin cap sitting on back edge → gives that sharp plane break
+	glPushMatrix();
+	glTranslatef(0.0f, PALM_H * 0.47f, -PALM_D * 0.48f);
+	box6(PALM_W_K * 0.95f, 0.018f, 0.026f);
+	glPopMatrix();
+
+	// ===== 2) Fingers: spaced V, lengths drop towards pinky, each 3-seg & tapered =====
+	struct F { float x, yawDeg, len; float w, d; };
+	F fingers[4] = {
+		{ -0.060f, -9.0f, 0.072f, 0.030f, 0.034f }, // index
+		{ -0.020f, -3.0f, 0.078f, 0.032f, 0.036f }, // middle (longest)
+		{  0.020f,  3.0f, 0.074f, 0.031f, 0.035f }, // ring
+		{  0.058f,  9.0f, 0.064f, 0.028f, 0.033f }, // pinky (shortest)
+	};
+
+	for (int i = 0; i < 4; ++i) {
+		glPushMatrix();
+		// place exactly on back/knuckle line
+		glTranslatef(fingers[i].x, -PALM_H * 0.24f, -PALM_D * 0.50f);
+		float yaw = fingers[i].yawDeg * (isLeftHand ? 1.f : -1.f); // fan outward depending on side
+		glRotatef(yaw, 0, 1, 0);
+		glRotatef(16.f, 1, 0, 0); // gentle base curl like ref
+
+		// seg1 (proximal)
+		float L1 = fingers[i].len, W1 = fingers[i].w, D1 = fingers[i].d;
+		glTranslatef(0, -L1 * 0.5f, 0); box6(W1, L1, D1);
+
+		// seg2
+		float L2 = L1 * 0.86f, W2 = W1 * 0.92f, D2 = D1 * 0.92f;
+		glTranslatef(0, -L1 * 0.5f, 0);
+		glRotatef(22.f, 1, 0, 0); glTranslatef(0, -L2 * 0.5f, 0); box6(W2, L2, D2);
+
+		// seg3 (flat tip, tiny downward angle → “gamey” finger end)
+		float L3 = L2 * 0.80f, W3 = W2 * 0.88f, D3 = D2 * 0.90f;
+		glTranslatef(0, -L2 * 0.5f, 0);
+		glRotatef(16.f, 1, 0, 0); glTranslatef(0, -L3 * 0.5f, 0); box6(W3, L3, D3);
+		glPopMatrix();
+	}
+
+	// ===== 3) Thumb: 2 segments, mounted low on palm SIDE, sweeping across palm =====
+	glPushMatrix();
+	// side anchor near wrist, a bit to palm front (matches grey ref)
+	glTranslatef(isLeftHand ? -PALM_W_W * 0.56f : PALM_W_W * 0.56f, -PALM_H * 0.02f, -PALM_D * 0.12f);
+	glRotatef(isLeftHand ? 52.f : -52.f, 0, 1, 0); // splay out of palm
+	glRotatef(10.f, 0, 0, 1);                       // small roll
+	glRotatef(18.f, 1, 0, 0);                       // slight curl
+
+	// base
+	float T1L = 0.074f, T1W = 0.044f, T1D = 0.046f;
+	glTranslatef(0, -T1L * 0.5f, 0); box6(T1W, T1L, T1D);
+
+	// tip
+	float T2L = 0.060f, T2W = T1W * 0.90f, T2D = T1D * 0.92f;
+	glTranslatef(0, -T1L * 0.5f, 0); glRotatef(30.f, 1, 0, 0);
+	glTranslatef(0, -T2L * 0.5f, 0); box6(T2W, T2L, T2D);
+	glPopMatrix();
+
+	// ===== 4) Palm bevel at wrist (like grey ref’s chamfer) =====
+	glPushMatrix();
+	glTranslatef(0.0f, -PALM_H * 0.40f, PALM_D * 0.30f);
+	glScalef(1.0f, 1.0f, 0.6f);
+	box6(PALM_W_W * 0.90f, 0.020f, 0.040f);
+	glPopMatrix();
+
+	glPopMatrix();
 }
 
 void drawSmoothChest()
@@ -727,87 +931,179 @@ void drawBackSashes()
 	const float PI = 3.14159f;
 	GLUquadric* quad = gluNewQuadric();
 
-	// --- Parameters for cloth shape and position ---
+	// --- Cloth shape and placement (same base as before) ---
 	float base_sash_width = 0.18f;
 	float sash_length = 2.5f;
 	float flare_factor = 1.2f;
 	int   segments = 30;
 
-	// Anchor point on the belt
+	// Belt anchor (back)
 	float belt_top_back_y = -0.05f;
 	float belt_back_radius = 0.18f;
 	float start_x_offset = base_sash_width / 2.0f;
 
-	const float TILT_DOWNWARD_X = 25.0f;
-	const float FLARE_SIDEWAYS_Y = 35.0f;
-	const float SURFACE_OFFSET = 0.02f;
+	const float TILT_DOWNWARD_X = 25.0f;   // down tilt
+	const float FLARE_SIDEWAYS_Y = 35.0f;  // left/right flare
+	const float SURFACE_OFFSET = 0.02f;  // stand proud of the body
+	const float ZBIAS = 0.003f; // small forward bias to avoid z-fight for overlays
 
-	// A reusable function to draw one sash
-	auto drawOneSash = [&](bool isLeftSash) {
-		glPushMatrix();
-		// 1. ANCHOR DIRECTLY ON THE BODY'S SURFACE at the belt line.
-		glTranslatef(isLeftSash ? -start_x_offset : +start_x_offset,
-			belt_top_back_y,
-			-belt_back_radius);
-
-		// 2. ROTATE to flare sideways and then tilt down and away from the body.
-		glRotatef(isLeftSash ? +FLARE_SIDEWAYS_Y : -FLARE_SIDEWAYS_Y, 0.0f, 1.0f, 0.0f);
-		glRotatef(TILT_DOWNWARD_X, 1.0f, 0.0f, 0.0f);
-
-		// 将基础颜色设为白色，这样纹理就不会被其他颜色影响
-		glColor3f(1.0f, 1.0f, 1.0f);
-
-		// 3. DRAW THE CLOTH with the physical offset and new curve.
-
-		// <--- 关键修改：启用并绑定红色纹理 --->
-		glEnable(GL_TEXTURE_2D);
-		glBindTexture(GL_TEXTURE_2D, g_redTextureID);
-		glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-
-		glBegin(GL_QUAD_STRIP);
-		for (int i = 0; i <= segments; ++i) {
-			float t = (float)i / segments;
-			float y = -t * sash_length;
-			float z = SURFACE_OFFSET + (-0.5f * pow(t, 2.0f));
-			float current_width = base_sash_width + t * flare_factor;
-			float x_offset = sin(t * PI) * (isLeftSash ? -0.2f : 0.2f);
-			glNormal3f(isLeftSash ? 0.45f : -0.45f, 0.5f, -0.75f);
-
-			// <--- 关键修改：为每个顶点添加纹理坐标 --->
-			// U 坐标代表图片的横向（0.0是左边，1.0是右边）
-			// V 坐标 (t) 代表图片的纵向，跟随饰带的长度变化
-			glTexCoord2f(0.0f, t);
-			glVertex3f(x_offset - current_width * 0.5f, y, z);
-
-			glTexCoord2f(1.0f, t);
-			glVertex3f(x_offset + current_width * 0.5f, y, z);
-		}
-		glEnd();
-
-		// <--- 关键修改：绘制完后禁用纹理，以免影响珠子 --->
-		glDisable(GL_TEXTURE_2D);
-
-
-		// Draw the beads
-		glColor3f(0.9f, 0.7f, 0.1f); // 把颜色改回金色来画珠子
-		for (int i = 1; i <= 5; ++i) {
+	auto drawOneSash = [&](bool isLeftSash)
+		{
 			glPushMatrix();
-			float t = i * 0.2f;
-			float y = -sash_length * t;
-			float z = SURFACE_OFFSET + (-0.5f * pow(t, 2.0f));
-			float current_width = base_sash_width + t * flare_factor;
-			float x_offset = sin(t * PI) * (isLeftSash ? -0.2f : 0.2f);
-			float sphere_radius = 0.06f;
-			float bead_x = x_offset + (isLeftSash ? +current_width * 0.5f - 0.04f : -current_width * 0.5f + 0.04f);
-			glTranslatef(bead_x, y, z + 0.02f);
-			gluSphere(quad, sphere_radius, 12, 12);
+
+			// Anchor to belt (on body surface)
+			glTranslatef(isLeftSash ? -start_x_offset : +start_x_offset, belt_top_back_y, -belt_back_radius);
+			glRotatef(isLeftSash ? +FLARE_SIDEWAYS_Y : -FLARE_SIDEWAYS_Y, 0, 1, 0);
+			glRotatef(TILT_DOWNWARD_X, 1, 0, 0);
+
+			// Normal used for cloth & decorations (roughly matches your earlier normal)
+			const float nx = isLeftSash ? 0.45f : -0.45f, ny = 0.5f, nz = -0.75f;
+
+			// =============== 1) BASE CLOTH (textured red) ===============
+			glColor3f(1, 1, 1);
+			glEnable(GL_TEXTURE_2D);
+			glBindTexture(GL_TEXTURE_2D, g_redTextureID);
+			glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+
+			glBegin(GL_QUAD_STRIP);
+			for (int i = 0; i <= segments; ++i) {
+				float t = (float)i / segments;
+				float y = -t * sash_length;
+				float z = SURFACE_OFFSET + (-0.5f * t * t);
+				float w = base_sash_width + t * flare_factor;
+				float xoff = sin(t * PI) * (isLeftSash ? -0.2f : 0.2f);
+
+				glNormal3f(nx, ny, nz);
+				glTexCoord2f(0.0f, t); glVertex3f(xoff - 0.5f * w, y, z);
+				glTexCoord2f(1.0f, t); glVertex3f(xoff + 0.5f * w, y, z);
+			}
+			glEnd();
+
+			glDisable(GL_TEXTURE_2D);
+
+			// =============== 2) GOLD EDGE TRIM ===============
+			const float trim = 0.018f;  // width of the edge trim
+			glColor3f(0.95f, 0.8f, 0.2f);
+
+			// Left edge strip (outer edge → inner edge)
+			glBegin(GL_QUAD_STRIP);
+			for (int i = 0; i <= segments; ++i) {
+				float t = (float)i / segments;
+				float y = -t * sash_length;
+				float z = SURFACE_OFFSET + ZBIAS + (-0.5f * t * t);
+				float w = base_sash_width + t * flare_factor;
+				float xoff = sin(t * PI) * (isLeftSash ? -0.2f : 0.2f);
+				float outer = xoff - 0.5f * w;
+				float inner = outer + trim;
+				glNormal3f(nx, ny, nz);
+				glVertex3f(outer, y, z);
+				glVertex3f(inner, y, z);
+			}
+			glEnd();
+
+			// Right edge strip
+			glBegin(GL_QUAD_STRIP);
+			for (int i = 0; i <= segments; ++i) {
+				float t = (float)i / segments;
+				float y = -t * sash_length;
+				float z = SURFACE_OFFSET + ZBIAS + (-0.5f * t * t);
+				float w = base_sash_width + t * flare_factor;
+				float xoff = sin(t * PI) * (isLeftSash ? -0.2f : 0.2f);
+				float outer = xoff + 0.5f * w;
+				float inner = outer - trim;
+				glNormal3f(nx, ny, nz);
+				glVertex3f(outer, y, z);
+				glVertex3f(inner, y, z);
+			}
+			glEnd();
+
+			// =============== 3) DOUBLE “CORDS” INSIDE THE EDGE ===============
+			const float cordInset = 0.045f; // how far inside from the edge
+			const float cordThick = 0.012f; // thickness of the cord strip
+			glColor3f(0.85f, 0.68f, 0.15f);
+
+			auto drawCord = [&](bool nearLeftEdge)
+				{
+					glBegin(GL_QUAD_STRIP);
+					for (int i = 0; i <= segments; ++i) {
+						float t = (float)i / segments;
+						float y = -t * sash_length;
+						float z = SURFACE_OFFSET + ZBIAS * 2.0f + (-0.5f * t * t);
+						float w = base_sash_width + t * flare_factor;
+						float xoff = sin(t * PI) * (isLeftSash ? -0.2f : 0.2f);
+
+						float edgeX = nearLeftEdge ? (xoff - 0.5f * w) : (xoff + 0.5f * w);
+						float inner1 = nearLeftEdge ? edgeX + cordInset : edgeX - cordInset;
+						float inner2 = nearLeftEdge ? inner1 + cordThick : inner1 - cordThick;
+
+						glNormal3f(nx, ny, nz);
+						glVertex3f(inner1, y, z);
+						glVertex3f(inner2, y, z);
+					}
+					glEnd();
+				};
+
+			drawCord(true);   // inner cord near the left edge of this sash side
+			drawCord(false);  // inner cord near the right edge
+
+			// =============== 4) BEADS ALONG THE SIDE (between the cords) ===============
+			glColor3f(0.95f, 0.8f, 0.2f);
+			std::vector<float> beadT = { 0.18f, 0.36f, 0.54f, 0.72f, 0.90f };
+
+			for (float t : beadT) {
+				float y = -t * sash_length;
+				float z = SURFACE_OFFSET + ZBIAS * 3.0f + (-0.5f * t * t);
+				float w = base_sash_width + t * flare_factor;
+				float xoff = sin(t * PI) * (isLeftSash ? -0.2f : 0.2f);
+
+				// place beads centrally between the two cords along the OUTER edge
+				bool outerSide = true;
+				float edgeX = outerSide ? (xoff + (isLeftSash ? -0.5f * w : +0.5f * w)) : xoff;
+				float beadX = edgeX + (isLeftSash ? (cordInset + 0.5f * cordThick) : -(cordInset + 0.5f * cordThick));
+
+				glPushMatrix();
+				glTranslatef(beadX, y, z + 0.02f);            // pop out slightly
+				gluSphere(quad, 0.055f, 16, 16);              // bead size
+				glPopMatrix();
+			}
+
+			// =============== 5) BOTTOM FAN-PANELS (inner gold shapes) ===============
+			// Three nested panels near the bottom. They sit ON TOP of the cloth.
+			auto drawPanel = [&](float startT, float endT, float insetFromEdge, float extraWidth)
+				{
+					glColor3f(1.0f, 0.93f, 0.55f); // pale gold
+					glBegin(GL_QUAD_STRIP);
+					for (int i = 0; i <= 12; ++i) {
+						float u = (float)i / 12.0f;
+						float t = startT + u * (endT - startT);
+						float y = -t * sash_length;
+						float z = SURFACE_OFFSET + ZBIAS * 4.0f + (-0.5f * t * t);
+						float w = base_sash_width + t * flare_factor;
+						float xoff = sin(t * PI) * (isLeftSash ? -0.2f : 0.2f);
+
+						// inner panel hugs the outer edge with a smooth arc
+						float outerEdge = xoff + (isLeftSash ? -0.5f * w : +0.5f * w);
+						float innerEdge = isLeftSash ? (outerEdge + insetFromEdge + extraWidth * u)
+							: (outerEdge - insetFromEdge - extraWidth * u);
+
+						glNormal3f(nx, ny, nz);
+						// Outer edge
+						glVertex3f(outerEdge, y, z);
+						// Inner, arcing inwards as we go up
+						glVertex3f(innerEdge, y, z);
+					}
+					glEnd();
+				};
+			// Three nested shapes like in the sketch (bigger to smaller)
+			drawPanel(0.78f, 0.98f, 0.06f, 0.05f);
+			drawPanel(0.82f, 1.00f, 0.09f, 0.06f);
+			drawPanel(0.86f, 1.00f, 0.12f, 0.07f);
+
 			glPopMatrix();
-		}
-		glPopMatrix();
 		};
 
-	drawOneSash(true);   // Draw the left sash
-	drawOneSash(false);  // Draw the right sash
+	drawOneSash(true);   // left sash
+	drawOneSash(false);  // right sash
 
 	gluDeleteQuadric(quad);
 }
