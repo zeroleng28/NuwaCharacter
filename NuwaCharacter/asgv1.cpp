@@ -753,32 +753,28 @@ void drawBackSashes()
 		glRotatef(isLeftSash ? +FLARE_SIDEWAYS_Y : -FLARE_SIDEWAYS_Y, 0.0f, 1.0f, 0.0f);
 		glRotatef(TILT_DOWNWARD_X, 1.0f, 0.0f, 0.0f);
 
-		// Set cloth and bead colours
-		glColor3f(1.0f, 1.0f, 1.0f); // Set to white so texture appears in its true colours
+		// 将基础颜色设为白色，这样纹理就不会被其他颜色影响
+		glColor3f(1.0f, 1.0f, 1.0f);
 
 		// 3. DRAW THE CLOTH with the physical offset and new curve.
 
-		// --- NEW: Enable and bind the red texture ---
+		// <--- 关键修改：启用并绑定红色纹理 --->
 		glEnable(GL_TEXTURE_2D);
 		glBindTexture(GL_TEXTURE_2D, g_redTextureID);
-		// Use GL_MODULATE to allow lighting to affect the texture
 		glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 
 		glBegin(GL_QUAD_STRIP);
 		for (int i = 0; i <= segments; ++i) {
 			float t = (float)i / segments;
 			float y = -t * sash_length;
-
 			float z = SURFACE_OFFSET + (-0.5f * pow(t, 2.0f));
-
 			float current_width = base_sash_width + t * flare_factor;
 			float x_offset = sin(t * PI) * (isLeftSash ? -0.2f : 0.2f);
-
 			glNormal3f(isLeftSash ? 0.45f : -0.45f, 0.5f, -0.75f);
 
-			// --- NEW: Add Texture Coordinates ---
-			// U=0 for the left edge, U=1 for the right edge of the strip.
-			// V=t follows the length of the sash.
+			// <--- 关键修改：为每个顶点添加纹理坐标 --->
+			// U 坐标代表图片的横向（0.0是左边，1.0是右边）
+			// V 坐标 (t) 代表图片的纵向，跟随饰带的长度变化
 			glTexCoord2f(0.0f, t);
 			glVertex3f(x_offset - current_width * 0.5f, y, z);
 
@@ -787,22 +783,20 @@ void drawBackSashes()
 		}
 		glEnd();
 
-		// --- NEW: Disable texturing so it doesn't affect the beads ---
+		// <--- 关键修改：绘制完后禁用纹理，以免影响珠子 --->
 		glDisable(GL_TEXTURE_2D);
 
 
 		// Draw the beads
-		glColor3f(0.9f, 0.7f, 0.1f); // Set colour back to gold for the beads
+		glColor3f(0.9f, 0.7f, 0.1f); // 把颜色改回金色来画珠子
 		for (int i = 1; i <= 5; ++i) {
 			glPushMatrix();
 			float t = i * 0.2f;
 			float y = -sash_length * t;
 			float z = SURFACE_OFFSET + (-0.5f * pow(t, 2.0f));
-
 			float current_width = base_sash_width + t * flare_factor;
 			float x_offset = sin(t * PI) * (isLeftSash ? -0.2f : 0.2f);
 			float sphere_radius = 0.06f;
-
 			float bead_x = x_offset + (isLeftSash ? +current_width * 0.5f - 0.04f : -current_width * 0.5f + 0.04f);
 			glTranslatef(bead_x, y, z + 0.02f);
 			gluSphere(quad, sphere_radius, 12, 12);
