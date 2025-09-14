@@ -29,5 +29,8 @@
     <Image Include="Textures\Red.bmp">
       <Filter>Resource Files</Filter>
     </Image>
+    <Image Include="Textures\Silver.bmp">
+      <Filter>Resource Files</Filter>
+    </Image>
   </ItemGroup>
 </Project>

@@ -130,6 +130,7 @@
   <ItemGroup>
     <Image Include="Textures\Gold.bmp" />
     <Image Include="Textures\Red.bmp" />
+    <Image Include="Textures\Silver.bmp" />
     <Image Include="Textures\Sky.bmp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
