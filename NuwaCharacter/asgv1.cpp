@@ -11,32 +11,28 @@
 
 #define WINDOW_TITLE "OpenGL Window"
 
-struct Particle {
-	float x, y, z;          // Position
-	float vx, vy, vz;       // Velocity
-	float r, g, b, a;       // Color (with alpha for fading)
-	float life;             // Current life (0.0 - 1.0)
-	float fade;             // How fast it fades
-	float size;             // Size of the particle
-	float initialSize;      // Store the starting size
-};
+// Global for braid animation
+float g_braidTime = 0.0f;
+float g_windStrength = 0.8f;
+float g_braidSegmentLength = 0.1f; // Make segments a bit shorter for more detail
+int g_numBraidSegments = 15;      // INCREASE this to make the braid longer
 
-std::vector<Particle> g_particles; // Our particle array
-const int MAX_PARTICLES = 1000;    // Max particles at any time
-bool g_isFiringEars = false;      // True if 'B' is pressed and ears should emit
-float g_lastParticleEmitTime = 0.0f; // To control emission rate
-float g_emitInterval = 0.05f;
+float g_characterPosX = 0.0f;
+float g_characterPosZ = 0.0f;
+float g_animationTime = 0.0f; // An accumulator for the animation cycle
+int g_walkDirection = 0;      // -1 for backward, 0 for idle, 1 for forward
 
 // --- NEW: Animation State Variables ---
 bool g_isHaloAnimating = false;
 bool g_isHaloVisible = true;
-float g_haloZ = -0.5f;
+float g_haloZ = -5.5f;
 float g_haloScale = 0.38f;
 
 // Store the light's initial and current animated position
 GLfloat g_initialLightPos[4] = { 5.0f, 5.0f, 5.0f, 1.0f };
 GLfloat g_animatedLightPos[4];
 
+GLuint g_shoeTextureID = 0;
 GLuint g_fireTextureID = 0;
 GLuint g_goldTextureID = 0;
 GLuint g_redTextureID = 0;
@@ -64,15 +60,16 @@ int lastMouseY = 0;
 void resetAnimation() {
 	g_isHaloAnimating = false;
 	g_isHaloVisible = true;
-	g_haloZ = -0.5f;
+	g_haloZ = -0.85f;
 	g_haloScale = 0.38f;
 
 	// Reset the light's position
 	memcpy(g_animatedLightPos, g_initialLightPos, sizeof(GLfloat) * 4);
 
-	// --- NEW: Reset particle system state ---
-	g_isFiringEars = false;
-	g_particles.clear();
+	// Reset walk animation state and character position
+	g_walkDirection = 0;
+	g_characterPosX = 0.0f;
+	g_characterPosZ = 0.0f;
 }
 
 LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -94,10 +91,14 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 			g_isHaloAnimating = true;
 		}
 
-		// --- THIS WAS MISSING ---
-		// Toggle the ear fire particle effect
+		// Toggle forward walk
 		if (wParam == 'B') {
-			g_isFiringEars = !g_isFiringEars;
+			g_walkDirection = (g_walkDirection == 1) ? 0 : 1;
+		}
+
+		// Toggle backward walk
+		if (wParam == 'C') {
+			g_walkDirection = (g_walkDirection == -1) ? 0 : -1;
 		}
 
 		// Reset all animations
@@ -185,7 +186,10 @@ bool initPixelFormat(HDC hdc)
 }
 
 GLuint loadTextureBMP(const char* imagepath) {
-	printf("Reading image %s\n", imagepath);
+	// Use OutputDebugStringA for logging in a Win32 application
+	char buffer[256];
+	sprintf_s(buffer, "Reading image %s\n", imagepath);
+	OutputDebugStringA(buffer);
 
 	unsigned char header[54];
 	unsigned int dataPos;
@@ -196,52 +200,89 @@ GLuint loadTextureBMP(const char* imagepath) {
 	FILE* file;
 	fopen_s(&file, imagepath, "rb");
 	if (!file) {
-		printf("Image could not be opened\n");
+		OutputDebugStringA("Error: Image could not be opened.\n");
 		return 0;
 	}
 
 	if (fread(header, 1, 54, file) != 54) {
-		printf("Not a correct BMP file\n");
-		fclose(file); // Close the file on error
+		OutputDebugStringA("Error: Not a correct BMP file (header read failed).\n");
+		fclose(file);
 		return 0;
 	}
 	if (header[0] != 'B' || header[1] != 'M') {
-		printf("Not a correct BMP file\n");
-		fclose(file); // Close the file on error
+		OutputDebugStringA("Error: Not a correct BMP file (magic number mismatch).\n");
+		fclose(file);
 		return 0;
 	}
 
+	// Read important information from the header
 	dataPos = *(int*)&(header[0x0A]);
 	imageSize = *(int*)&(header[0x22]);
 	width = *(int*)&(header[0x12]);
 	height = *(int*)&(header[0x16]);
+	unsigned short bitsPerPixel = *(unsigned short*)&(header[0x1C]);
 
-	if (imageSize == 0)    imageSize = width * height * 3;
-	if (dataPos == 0)      dataPos = 54;
+	// --- NEW: Handle both 24-bit (RGB) and 32-bit (RGBA) BMPs ---
+	GLenum internalFormat;
+	GLenum pixelFormat;
+	int bytesPerPixel;
 
+	if (bitsPerPixel == 32) {
+		internalFormat = GL_RGBA;
+		pixelFormat = GL_BGRA_EXT; // Windows BMPs store alpha channels in BGRA format
+		bytesPerPixel = 4;
+	}
+	else if (bitsPerPixel == 24) {
+		internalFormat = GL_RGB;
+		pixelFormat = GL_BGR_EXT;  // Windows BMPs store colors in BGR format
+		bytesPerPixel = 3;
+	}
+	else {
+		sprintf_s(buffer, "Error: Unsupported BMP format (%d bits per pixel).\n", bitsPerPixel);
+		OutputDebugStringA(buffer);
+		fclose(file);
+		return 0;
+	}
+
+	// Some BMP files may leave these fields as 0
+	if (imageSize == 0) { imageSize = width * height * bytesPerPixel; }
+	if (dataPos == 0) { dataPos = 54; } // The size of the header
+
+	// Create a buffer to hold the data
 	data = new unsigned char[imageSize];
-	fread(data, 1, imageSize, file);
-	fclose(file);
 
+	// Read the actual image data from the file
+	fseek(file, dataPos, SEEK_SET);
+	size_t readResult = fread(data, 1, imageSize, file);
+
+	// Error check after reading
+	if (readResult != imageSize) {
+		OutputDebugStringA("Error: Could not read all pixel data from file.\n");
+		fclose(file);
+		delete[] data; // IMPORTANT: Free memory on failure
+		return 0;
+	}
+
+	fclose(file); // File is no longer needed
+
+	// --- Create one OpenGL texture ---
 	GLuint textureID;
 	glGenTextures(1, &textureID);
 	glBindTexture(GL_TEXTURE_2D, textureID);
 
 	// Give the image to OpenGL
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_BGR_EXT, GL_UNSIGNED_BYTE, data);
+	glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, pixelFormat, GL_UNSIGNED_BYTE, data);
 
-	// THE FIX IS HERE: The delete[] data; line was moved from here...
-
-	// Texture filtering and wrapping
+	// Set Texture filtering and wrapping parameters
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
 
-	// Generate Mipmaps AFTER creating the main texture and BEFORE deleting the data
-	gluBuild2DMipmaps(GL_TEXTURE_2D, GL_RGB, width, height, GL_BGR_EXT, GL_UNSIGNED_BYTE, data);
+	// Generate Mipmaps for the texture
+	gluBuild2DMipmaps(GL_TEXTURE_2D, internalFormat, width, height, pixelFormat, GL_UNSIGNED_BYTE, data);
 
-	// ...to here. Now we can safely free our copy of the data.
+	// Once the texture is loaded into VRAM, we can free the host RAM
 	delete[] data;
 
 	return textureID;
@@ -1217,31 +1258,57 @@ void drawHelmetVisor()
 	glMaterialfv(GL_FRONT, GL_SPECULAR, mat_specular);
 	glMaterialfv(GL_FRONT, GL_SHININESS, mat_shininess);
 
-	// --- NEW: Enable and apply the Gold texture ---
+	// Enable and apply the Gold texture
 	glEnable(GL_TEXTURE_2D);
-	glBindTexture(GL_TEXTURE_2D, g_goldTextureID); // Bind the new gold texture
-	// Use GL_MODULATE to combine the gold texture with the material lighting
+	glBindTexture(GL_TEXTURE_2D, g_goldTextureID);
 	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 
-	// Define the triangle's vertices to control its size and shape.
-	float base_width = 0.35f;
-	float height = 0.55f;
+	// --- Define the 9 vertices of the new diamond shape ---
+	float diamond_width = 1.0f;
+	float diamond_height = 0.40f;
 
-	glBegin(GL_TRIANGLES);
+	// Pre-calculate half dimensions for clarity
+	float w = diamond_width / 2.0f;
+	float h = diamond_height / 2.0f;
+
+	// An array to hold the 9 points of the diamond's perimeter
+	GLfloat v[9][2] = {
+		{ 0.0f,      -h },         // 0: Bottom sharp point
+		{ w * 0.55f, -h * 0.4f },  // 1: Lower-mid right
+		{ w * 0.75f,      0.15f },      // 2: Widest point right
+		{ w * 0.55f,  h * 0.2f },  // 3: Upper-mid right
+		{ w * 0.2f,   h },         // 4: Top right
+		{ -w * 0.2f,  h },         // 5: Top left
+		{ -w * 0.55f, h * 0.2f },  // 6: Upper-mid left
+		{ -w * 0.75f,     0.15f },      // 7: Widest point left
+		{ -w * 0.55f, -h * 0.4f }  // 8: Lower-mid left
+	};
+
+	// --- Draw the shape as a Triangle Fan from the centre ---
+	glBegin(GL_TRIANGLE_FAN);
 	glNormal3f(0.0f, 0.0f, 1.0f); // Normal for the front face
 
-	// MODIFIED: Vertices for an upside-down (downward-pointing) triangle with Texture Coordinates
-	glTexCoord2f(0.0f, 1.0f); // Top-left of texture maps to top-left of triangle
-	glVertex3f(-base_width, 0.0f, 0.0f);
+	// Center vertex of the fan (maps to the centre of the texture)
+	glTexCoord2f(0.5f, 0.5f);
+	glVertex3f(0.0f, 0.0f, 0.0f);
 
-	glTexCoord2f(1.0f, 1.0f); // Top-right of texture maps to top-right of triangle
-	glVertex3f(base_width, 0.0f, 0.0f);
+	// Draw the 9 perimeter vertices, calculating texture coordinates for each
+	// We add the first vertex again at the end to close the shape
+	for (int i = 0; i <= 9; ++i) {
+		int index = i % 9; // Loop back to the first vertex for the last triangle
+		float vx = v[index][0];
+		float vy = v[index][1];
 
-	glTexCoord2f(0.5f, 0.0f); // Middle-bottom of texture maps to bottom tip of triangle
-	glVertex3f(0.0f, -height, 0.0f);
+		// Map vertex position (from -w to w, -h to h) to texture coordinate (0 to 1)
+		float u = (vx + w) / diamond_width;
+		float v_tex = (vy + h) / diamond_height;
+
+		glTexCoord2f(u, v_tex);
+		glVertex3f(vx, vy, 0.0f);
+	}
 	glEnd();
 
-	// --- NEW: Disable texturing after drawing the visor ---
+	// Disable texturing after drawing the visor
 	glDisable(GL_TEXTURE_2D);
 
 	glPopMatrix();
@@ -1306,129 +1373,6 @@ void drawHalo()
 	glEnable(GL_LIGHTING);
 }
 
-void updateParticles(float deltaTime)
-{
-	// Emit new particles if firing
-	if (g_isFiringEars) {
-		if (g_lastParticleEmitTime >= g_emitInterval) {
-
-			// --- CORRECTED: Define ear tip position in LOCAL space ---
-			// This is the position relative to the character's center pivot
-			float earTipY = 1.18f + 0.2f; // Head's Y-offset + Ear's Y-offset
-			float earTipX = 0.3f + 0.6f;  // Ear's X-offset + Ear's length
-
-			// --- Emit from Right Ear ---
-			if (g_particles.size() < MAX_PARTICLES) {
-				Particle p;
-				// Position is in simple, un-rotated local space
-				p.x = earTipX;
-				p.y = earTipY;
-				p.z = 0.0f;
-
-				// Velocity is in simple, un-rotated local space (points away from the ear)
-				p.vx = 2.0f + ((float)rand() / RAND_MAX);
-				p.vy = (float)rand() / RAND_MAX * 0.5f - 0.25f;
-				p.vz = (float)rand() / RAND_MAX * 0.5f - 0.25f;
-
-				// Set particle properties
-				int colorType = rand() % 2;
-				if (colorType == 0) { p.r = 1.0f; p.g = 1.0f; p.b = (float)rand() / RAND_MAX * 0.5f; }
-				else { p.r = 1.0f; p.g = 0.5f + ((float)rand() / RAND_MAX * 0.2f); p.b = 0.0f; }
-				p.life = 1.0f;
-				p.fade = (float)rand() / RAND_MAX * 0.7f + 1.0f;
-				p.size = (float)rand() / RAND_MAX * 0.15f + 0.1f;
-				p.initialSize = p.size;
-				p.a = 0.7f + ((float)rand() / RAND_MAX * 0.3f);
-				g_particles.push_back(p);
-			}
-
-			// --- Emit from Left Ear ---
-			if (g_particles.size() < MAX_PARTICLES) {
-				Particle p;
-				// Position is in simple, un-rotated local space
-				p.x = -earTipX;
-				p.y = earTipY;
-				p.z = 0.0f;
-
-				// Velocity is in simple, un-rotated local space
-				p.vx = -2.0f - ((float)rand() / RAND_MAX);
-				p.vy = (float)rand() / RAND_MAX * 0.5f - 0.25f;
-				p.vz = (float)rand() / RAND_MAX * 0.5f - 0.25f;
-
-				// Set particle properties
-				int colorType = rand() % 2;
-				if (colorType == 0) { p.r = 1.0f; p.g = 1.0f; p.b = (float)rand() / RAND_MAX * 0.5f; }
-				else { p.r = 1.0f; p.g = 0.5f + ((float)rand() / RAND_MAX * 0.2f); p.b = 0.0f; }
-				p.life = 1.0f;
-				p.fade = (float)rand() / RAND_MAX * 0.7f + 1.0f;
-				p.size = (float)rand() / RAND_MAX * 0.15f + 0.1f;
-				p.initialSize = p.size;
-				p.a = 0.7f + ((float)rand() / RAND_MAX * 0.3f);
-				g_particles.push_back(p);
-			}
-			g_lastParticleEmitTime = 0.0f;
-		}
-		else {
-			g_lastParticleEmitTime += deltaTime;
-		}
-	}
-
-	// Update existing particles
-	for (auto it = g_particles.begin(); it != g_particles.end(); ) {
-		// Note: The "wind" effect here is now relative to the character's orientation
-		it->vx += 0.5f * deltaTime;
-		it->vy += 0.8f * deltaTime;
-		it->x += it->vx * deltaTime;
-		it->y += it->vy * deltaTime;
-		it->z += it->vz * deltaTime;
-		it->life -= it->fade * deltaTime;
-		it->a = it->life;
-		if (it->life <= 0.0f) {
-			it = g_particles.erase(it);
-		}
-		else {
-			++it;
-		}
-	}
-}
-
-void drawParticles() {
-	if (g_particles.empty()) return;
-
-	// Save OpenGL state
-	glPushAttrib(GL_LIGHTING_BIT | GL_ENABLE_BIT | GL_POINT_BIT | GL_DEPTH_BUFFER_BIT);
-
-	glDisable(GL_LIGHTING); // Particles are self-illuminated
-	glEnable(GL_BLEND);     // Enable transparency
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // Normal alpha blending
-	glDepthMask(GL_FALSE);  // Allow particles to render correctly without depth issues
-
-	// --- NEW: Make points soft and circular instead of square ---
-	glEnable(GL_POINT_SMOOTH);
-	glHint(GL_POINT_SMOOTH_HINT, GL_NICEST);
-
-	// --- NEW: Begin drawing points, not quads ---
-	glBegin(GL_POINTS);
-	for (const auto& p : g_particles) {
-		// Set the colour and transparency for this particle
-		glColor4f(p.r, p.g, p.b, p.a);
-
-		// Calculate the current size for the pulsing effect
-		float currentSize = p.initialSize * sin(p.life * 3.14159f);
-
-		// Set the size of the point in pixels
-		// This is the main number to adjust for the flame's visual size
-		glPointSize(currentSize * 60.0f);
-
-		// Draw the single point for the particle
-		glVertex3f(p.x, p.y, p.z);
-	}
-	glEnd();
-
-	// Restore the original OpenGL state
-	glPopAttrib();
-}
-
 void drawEars()
 {
 	glPushAttrib(GL_LIGHTING_BIT | GL_ENABLE_BIT);
@@ -1453,7 +1397,7 @@ void drawEars()
 	// --- Right Ear ---
 	glPushMatrix();
 	// CORRECTED POSITIONING
-	glTranslatef(0.3f, 0.2f, 0.0f);
+	glTranslatef(0.22f, 0.02f, 0.0f);
 	glRotatef(-90.0f, 0.0f, 0.0f, 1.0f);
 	drawCone(ear_base_radius, ear_height, 16, 16);
 	glPopMatrix();
@@ -1461,7 +1405,7 @@ void drawEars()
 	// --- Left Ear ---
 	glPushMatrix();
 	// CORRECTED POSITIONING
-	glTranslatef(-0.3f, 0.2f, 0.0f);
+	glTranslatef(-0.22f, 0.02f, 0.0f);
 	glRotatef(90.0f, 0.0f, 0.0f, 1.0f);
 	drawCone(ear_base_radius, ear_height, 16, 16);
 	glPopMatrix();
@@ -1488,12 +1432,9 @@ void drawFace()
 
 	// --- Add the Helmet Visor ---
 	glPushMatrix();
-	glTranslatef(0.0f, 0.28f, 0.28f);
+	glTranslatef(0.0f, 0.20f, 0.28f);
 	drawHelmetVisor();
 	glPopMatrix();
-
-	// --- NEW: Draw the Ears ---
-	drawEars(); // <--- ADD THIS LINE
 
 	// --- Main Head Shape ---
 	int latitudes = 15;
@@ -1525,7 +1466,74 @@ void drawFace()
 		}
 		glEnd();
 	}
+	drawEars();
+
 	glPopMatrix(); // End of the entire head group
+}
+
+void drawBraid(float yOffset, float zOffset)
+{
+	GLUquadric* quad = gluNewQuadric();
+	gluQuadricNormals(quad, GLU_SMOOTH);
+
+	// --- 2. DYNAMIC COLOUR CHANGE ---
+	// This logic is copied from drawHalo to sync the colours.
+	// It calculates a new colour each frame based on the global rainbow offset.
+	float r = 0.5f * (1.0f + sin(g_rainbow_offset * 2.0f));
+	float g = 0.5f * (1.0f + sin(g_rainbow_offset * 2.0f + 2.0f));
+	float b = 0.5f * (1.0f + sin(g_rainbow_offset * 2.0f + 4.0f));
+
+	// Set the calculated rainbow colour for the braid.
+	// This works because GL_COLOR_MATERIAL is enabled in your display function.
+	glColor3f(r, g, b);
+
+	glPushMatrix();
+
+	// Position the braid's origin on the head
+	glTranslatef(0.0f, yOffset, zOffset);
+	glRotatef(180.0f, 0.0f, 1.0f, 0.0f); // Rotate to face the back
+
+	// --- 1. STRONGER CURVE ---
+	// The max angle is increased to make the braid bend more sharply.
+	const int CURVE_SEGMENTS = 5;
+	const float MAX_CURVE_ANGLE = 28.0f; // Increased from 20.0f
+
+	for (int i = 0; i < g_numBraidSegments; ++i)
+	{
+		glPushMatrix();
+
+		float swayAmplitude = 0.0f;
+		if (i >= CURVE_SEGMENTS) {
+			swayAmplitude = ((float)i - (CURVE_SEGMENTS - 1)) * 4.0f * g_windStrength;
+		}
+		float swayAngleY = sin(g_braidTime * 2.5f + i * 0.5f) * swayAmplitude;
+		float swayAngleX = cos(g_braidTime * 3.0f + i * 0.7f) * swayAmplitude * 0.5f;
+
+		glRotatef(swayAngleY, 0.0f, 1.0f, 0.0f);
+		glRotatef(swayAngleX, 1.0f, 0.0f, 0.0f);
+
+		const float segmentRadius = 0.1f;
+		gluCylinder(quad, segmentRadius, segmentRadius, g_braidSegmentLength, 20, 1);
+		gluDisk(quad, 0, segmentRadius, 20, 1);
+		glPushMatrix();
+		glTranslatef(0.0f, 0.0f, g_braidSegmentLength);
+		gluDisk(quad, 0, segmentRadius, 20, 1);
+		glPopMatrix();
+
+		glPopMatrix();
+
+		if (i < CURVE_SEGMENTS)
+		{
+			float curveFactor = 1.0f - ((float)i / CURVE_SEGMENTS);
+			glRotatef(MAX_CURVE_ANGLE * curveFactor, 1.0f, 0.0f, 0.0f);
+		}
+
+		const float segmentGap = 0.02f;
+		glTranslatef(0.0f, 0.0f, g_braidSegmentLength + segmentGap);
+	}
+
+	glPopMatrix();
+	gluDeleteQuadric(quad);
 }
 
 void drawDiamondKneeJoint()
@@ -1639,8 +1647,12 @@ void drawLegs()
 	glMaterialfv(GL_FRONT, GL_SPECULAR, mat_specular);
 	glMaterialfv(GL_FRONT, GL_SHININESS, mat_shininess);
 
-	auto drawOneLeg = []() {
+	// Lambda to draw a single leg, now with animation parameters
+	auto drawOneLeg = [](float hipAngle, float kneeAngle) {
 		glPushMatrix(); // Save the state at the hip joint
+
+		// --- ANIMATION: Apply rotation at the hip ---
+		glRotatef(hipAngle, 1.0f, 0.0f, 0.0f);
 
 		// --- Part 1: Upper Leg (Thigh) ---
 		float thigh_height = 0.8f;
@@ -1664,15 +1676,15 @@ void drawLegs()
 
 		// --- Position for the Knee Joint ---
 		glTranslatef(0.0f, -thigh_height, 0.0f);
-		glRotatef(-5.0f, 1.0f, 0.0f, 0.0f);
+
+		// --- ANIMATION: Apply rotation at the knee ---
+		glRotatef(kneeAngle, 1.0f, 0.0f, 0.0f);
 
 		// --- Draw the Diamond Knee Joint ---
 		drawDiamondKneeJoint();
 
 		// --- Part 2: Lower Leg (Shin) ---
-		// MODIFIED: Reduced the downward translation to create an overlap with the knee.
 		glTranslatef(0.0f, -0.22f, 0.0f);
-
 		float shin_height = 0.7f;
 		glPushMatrix();
 		glTranslatef(0.0f, -shin_height / 2.0f, 0.0f);
@@ -1694,50 +1706,127 @@ void drawLegs()
 
 		// --- Part 3: Foot ---
 		glTranslatef(0.0f, -shin_height, 0.0f);
-		glRotatef(5.0f, 1.0f, 0.0f, 0.0f);
-
+		glRotatef(5.0f, 1.0f, 0.0f, 0.0f); // Static rotation for foot angle
 		glPushMatrix();
 		{
+			// --- NEW: Enable texturing and bind shoe texture for the foot ---
+			glEnable(GL_TEXTURE_2D);
+			glBindTexture(GL_TEXTURE_2D, g_shoeTextureID); // Bind the shoe texture
+			glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE); // Combine texture with material lighting
+
 			float v[10][3] = {
-				{-0.12f, 0.0f,  0.14f}, {0.12f, 0.0f,  0.14f},
-				{0.12f, 0.0f, -0.25f}, {-0.12f, 0.0f, -0.25f},
-				{-0.12f, -0.15f,  0.14f}, {0.12f, -0.15f,  0.14f},
-				{0.12f, -0.15f, -0.25f}, {-0.12f, -0.15f, -0.25f},
-				{0.0f, -0.15f, 0.4f},
-				{0.0f, -0.15f, -0.4f}
+				{-0.12f, 0.0f,   0.14f}, {0.12f, 0.0f,   0.14f},    // 0,1: Top front
+				{0.12f, 0.0f, -0.25f}, {-0.12f, 0.0f, -0.25f},    // 2,3: Top back
+				{-0.12f, -0.15f,  0.14f}, {0.12f, -0.15f,  0.14f},  // 4,5: Bottom front
+				{0.12f, -0.15f, -0.25f}, {-0.12f, -0.15f, -0.25f},  // 6,7: Bottom back
+				{0.0f, -0.15f, 0.4f},                             // 8: Front point
+				{0.0f, -0.15f, -0.4f}                              // 9: Back point
 			};
 
 			glBegin(GL_QUADS);
-			glNormal3f(0.0, 1.0, 0.0); glVertex3fv(v[0]); glVertex3fv(v[1]); glVertex3fv(v[2]); glVertex3fv(v[3]);
-			glNormal3f(0.0, -1.0, 0.0); glVertex3fv(v[4]); glVertex3fv(v[7]); glVertex3fv(v[6]); glVertex3fv(v[5]);
-			glNormal3f(0.0, 0.0, -1.0); glVertex3fv(v[3]); glVertex3fv(v[2]); glVertex3fv(v[6]); glVertex3fv(v[7]);
-			glNormal3f(-1.0, 0.0, 0.0); glVertex3fv(v[0]); glVertex3fv(v[3]); glVertex3fv(v[7]); glVertex3fv(v[4]);
-			glNormal3f(1.0, 0.0, 0.0); glVertex3fv(v[1]); glVertex3fv(v[2]); glVertex3fv(v[6]); glVertex3fv(v[5]);
+			// Top face
+			glNormal3f(0.0, 1.0, 0.0);
+			glTexCoord2f(0.0f, 1.0f); glVertex3fv(v[0]);
+			glTexCoord2f(1.0f, 1.0f); glVertex3fv(v[1]);
+			glTexCoord2f(1.0f, 0.0f); glVertex3fv(v[2]);
+			glTexCoord2f(0.0f, 0.0f); glVertex3fv(v[3]);
+
+			// Bottom face
+			glNormal3f(0.0, -1.0, 0.0);
+			glTexCoord2f(0.0f, 1.0f); glVertex3fv(v[4]);
+			glTexCoord2f(0.0f, 0.0f); glVertex3fv(v[7]);
+			glTexCoord2f(1.0f, 0.0f); glVertex3fv(v[6]);
+			glTexCoord2f(1.0f, 1.0f); glVertex3fv(v[5]);
+
+			// Back face
+			glNormal3f(0.0, 0.0, -1.0);
+			glTexCoord2f(0.0f, 1.0f); glVertex3fv(v[3]);
+			glTexCoord2f(1.0f, 1.0f); glVertex3fv(v[2]);
+			glTexCoord2f(1.0f, 0.0f); glVertex3fv(v[6]);
+			glTexCoord2f(0.0f, 0.0f); glVertex3fv(v[7]);
+
+			// Left face
+			glNormal3f(-1.0, 0.0, 0.0);
+			glTexCoord2f(0.0f, 1.0f); glVertex3fv(v[0]);
+			glTexCoord2f(1.0f, 1.0f); glVertex3fv(v[3]);
+			glTexCoord2f(1.0f, 0.0f); glVertex3fv(v[7]);
+			glTexCoord2f(0.0f, 0.0f); glVertex3fv(v[4]);
+
+			// Right face
+			glNormal3f(1.0, 0.0, 0.0);
+			glTexCoord2f(0.0f, 1.0f); glVertex3fv(v[1]);
+			glTexCoord2f(1.0f, 1.0f); glVertex3fv(v[2]);
+			glTexCoord2f(1.0f, 0.0f); glVertex3fv(v[6]);
+			glTexCoord2f(0.0f, 0.0f); glVertex3fv(v[5]);
 			glEnd();
 
 			glBegin(GL_TRIANGLES);
-			glNormal3f(0.0, 0.0, 1.0); glVertex3fv(v[0]); glVertex3fv(v[1]); glVertex3f(0.0, 0.0, 0.25);
-			glNormal3f(0.7, -0.3, 0.7); glVertex3fv(v[1]); glVertex3fv(v[8]); glVertex3fv(v[5]);
-			glNormal3f(-0.7, -0.3, 0.7); glVertex3fv(v[0]); glVertex3fv(v[4]); glVertex3fv(v[8]);
-			glNormal3f(0.7, -0.3, -0.7); glVertex3fv(v[2]); glVertex3fv(v[6]); glVertex3fv(v[9]);
-			glNormal3f(-0.7, -0.3, -0.7); glVertex3fv(v[3]); glVertex3fv(v[9]); glVertex3fv(v[7]);
+			// Front face (connecting to the point)
+			glNormal3f(0.0, 0.0, 1.0);
+			glTexCoord2f(0.0f, 0.0f); glVertex3fv(v[0]);
+			glTexCoord2f(1.0f, 0.0f); glVertex3fv(v[1]);
+			glTexCoord2f(0.5f, 1.0f); glVertex3f(0.0, 0.0, 0.25); // Top center front point
+
+			// These are the side triangles for the front extension (point 8)
+			glNormal3f(0.7, -0.3, 0.7); // Adjust normal as needed
+			glTexCoord2f(0.0f, 0.0f); glVertex3fv(v[1]);
+			glTexCoord2f(1.0f, 0.5f); glVertex3fv(v[8]); // Point 8
+			glTexCoord2f(1.0f, 0.0f); glVertex3fv(v[5]);
+
+			glNormal3f(-0.7, -0.3, 0.7); // Adjust normal as needed
+			glTexCoord2f(1.0f, 0.0f); glVertex3fv(v[0]);
+			glTexCoord2f(0.0f, 0.0f); glVertex3fv(v[4]);
+			glTexCoord2f(0.0f, 0.5f); glVertex3fv(v[8]); // Point 8
+
+			// These are the side triangles for the back extension (point 9)
+			glNormal3f(0.7, -0.3, -0.7); // Adjust normal as needed
+			glTexCoord2f(0.0f, 0.0f); glVertex3fv(v[2]);
+			glTexCoord2f(1.0f, 0.5f); glVertex3fv(v[6]);
+			glTexCoord2f(1.0f, 0.0f); glVertex3fv(v[9]); // Point 9
+
+			glNormal3f(-0.7, -0.3, -0.7); // Adjust normal as needed
+			glTexCoord2f(1.0f, 0.0f); glVertex3fv(v[3]);
+			glTexCoord2f(0.0f, 0.0f); glVertex3fv(v[9]); // Point 9
+			glTexCoord2f(0.0f, 0.5f); glVertex3fv(v[7]);
 			glEnd();
+
+			// --- NEW: Disable texturing after drawing the foot ---
+			glDisable(GL_TEXTURE_2D);
 		}
 		glPopMatrix();
 
 		glPopMatrix(); // Restore to the hip joint state
 		};
 
+	// --- Animation Calculation ---
+	const float WALK_SPEED = 5.0f;
+	const float HIP_SWING_AMPLITUDE = 40.0f;
+	const float KNEE_BEND_AMPLITUDE = 70.0f;
+
+	float rightHipAngle = 0.0f;
+	float rightKneeAngle = 0.0f;
+
+	if (g_walkDirection != 0) {
+		rightHipAngle = sin(g_animationTime * WALK_SPEED) * HIP_SWING_AMPLITUDE * g_walkDirection;
+		// Knee bends when the leg is moving forward
+		rightKneeAngle = max(0.0f, sin(g_animationTime * WALK_SPEED) * g_walkDirection) * KNEE_BEND_AMPLITUDE;
+	}
+
+	// Left leg is in the opposite phase of the right leg
+	float leftHipAngle = -rightHipAngle;
+	float leftKneeAngle = max(0.0f, sin(g_animationTime * WALK_SPEED + 3.14159f) * g_walkDirection) * KNEE_BEND_AMPLITUDE;
+
+
 	// --- Draw Left Leg ---
 	glPushMatrix();
 	glTranslatef(-0.18f, -1.0f, 0.0f);
-	drawOneLeg();
+	drawOneLeg(leftHipAngle, leftKneeAngle);
 	glPopMatrix();
 
 	// --- Draw Right Leg ---
 	glPushMatrix();
 	glTranslatef(0.18f, -1.0f, 0.0f);
-	drawOneLeg();
+	drawOneLeg(rightHipAngle, rightKneeAngle);
 	glPopMatrix();
 }
 
@@ -1787,39 +1876,48 @@ void drawSkyBackground(int winW, int winH)
 
 void display(float deltaTime)
 {
-	// --- NEW: Update particle system at the start of the frame ---
-	updateParticles(deltaTime);
+	// --- Animation Updates ---
+	if (g_walkDirection != 0)
+	{
+		// Accumulate time for the leg swing animation
+		g_animationTime += deltaTime;
 
-	// --- Halo Animation Logic Block ---
+		// Define character movement speed
+		const float MOVE_SPEED = 2.0f; // Units per second
+
+		// Calculate movement direction based on the current camera rotation (rotateY)
+		float angleRad = rotateY * (3.14159f / 180.0f); // Convert viewing angle to radians
+
+		// Update character's X and Z position
+		g_characterPosX -= sin(angleRad) * g_walkDirection * MOVE_SPEED * deltaTime;
+		g_characterPosZ -= cos(angleRad) * g_walkDirection * MOVE_SPEED * deltaTime;
+	}
+
 	if (g_isHaloAnimating) {
-		// Define animation speeds
-		const float HALO_MOVE_SPEED = 5.0f;   // How fast it moves forward
-		const float HALO_SCALE_SPEED = 2.0f;  // How fast it grows (using your faster value)
-		const float HALO_DISAPPEAR_Z = 4.0f;  // The Z-position where it disappears
-
-		// Update position and scale based on delta time for smooth animation
+		const float HALO_MOVE_SPEED = 5.0f;
+		const float HALO_SCALE_SPEED = 2.0f;
+		const float HALO_DISAPPEAR_Z = 4.0f;
 		g_haloZ += HALO_MOVE_SPEED * deltaTime;
 		g_haloScale += HALO_SCALE_SPEED * deltaTime;
 		g_animatedLightPos[2] += HALO_MOVE_SPEED * deltaTime;
-
-		// Check if the halo is out of range
 		if (g_haloZ > HALO_DISAPPEAR_Z) {
-			g_isHaloVisible = false;   // Make it invisible
-			g_isHaloAnimating = false; // Stop the animation from updating further
+			g_isHaloVisible = false;
+			g_isHaloAnimating = false;
 		}
 	}
 
-	// Increment the global offset each frame to animate the halo colours
+	g_braidTime += deltaTime;
+
 	float animation_speed = 0.09f;
 	g_rainbow_offset += animation_speed * deltaTime;
 
+
+	// --- Rendering Starts Here ---
 	glClearColor(1.0, 1.0, 1.0, 0.0);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-	// Draw the 2D sky background first
-	drawSkyBackground(800, 600);   // <-- match your window size
+	drawSkyBackground(800, 600);
 
-	// Now set up lights/camera and draw 3D as usual
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_LIGHTING);
 	glEnable(GL_LIGHT0);
@@ -1846,15 +1944,22 @@ void display(float deltaTime)
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 
+	// --- CAMERA AND CHARACTER TRANSFORMATION ---
+	// 1. Apply camera transformations (zoom and rotation around the character)
 	glTranslatef(0.0f, -0.5f, zoomFactor);
 	glRotatef(rotateX, 1.0f, 0.0f, 0.0f);
 	glRotatef(rotateY, 0.0f, 1.0f, 0.0f);
+
+	// 2. Apply the character's world position. This effectively makes the camera
+	//    "follow" the character as it moves.
+	glTranslatef(-g_characterPosX, 0.0f, -g_characterPosZ);
+
 
 	// --- Drawing Calls for the Character ---
 	drawSmoothChest();
 	drawWaistWithVerticalLines();
 	drawSmoothLowerBodyAndSkirt();
-	drawLegs();
+	drawLegs(); // This will now draw the animated legs at the new position
 
 	glEnable(GL_POLYGON_OFFSET_FILL);
 	glPolygonOffset(-1.0f, -1.0f);
@@ -1869,13 +1974,12 @@ void display(float deltaTime)
 	glPushMatrix();
 	drawNeck();
 	drawFace();
+	drawBraid(1.25f, -0.3f);
 	drawHalo();
 	glPopMatrix();
 
-	// --- NEW: Draw particle system after the character ---
-	drawParticles();
+	glDisable(GL_TEXTURE_2D);
 
-	// --- NEW: Swap buffers at the end of all drawing ---
 	SwapBuffers(g_hDC);
 }
 
@@ -1922,7 +2026,6 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow)
 	ShowWindow(hWnd, nCmdShow);
 
 	// --- Load textures ---
-	// CORRECTED: The global variable is named g_skyTextureID, not g_fireTextureID
 	g_fireTextureID = loadTextureBMP("Textures/Fire.bmp");
 	if (g_fireTextureID == 0) {
 		MessageBox(hWnd, "Could not load Textures/Fire.bmp. Make sure the file is in the Textures folder.", "Texture Error", MB_OK | MB_ICONERROR);
@@ -1944,6 +2047,12 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow)
 	g_skyTextureID = loadTextureBMP("Textures/Sky.bmp");
 	if (g_skyTextureID == 0) {
 		MessageBox(hWnd, "Could not load Textures/Sky.bmp. Make sure the file is in the Textures folder.", "Texture Error", MB_OK | MB_ICONERROR);
+		return -1;
+	}
+
+	g_shoeTextureID = loadTextureBMP("Textures/Shoe.bmp");
+	if (g_shoeTextureID == 0) {
+		MessageBox(hWnd, "Could not load Textures/Shoe.bmp. Make sure the file is in the Textures folder.", "Texture Error", MB_OK | MB_ICONERROR);
 		return -1;
 	}
 
