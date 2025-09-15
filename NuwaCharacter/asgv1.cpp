@@ -16,6 +16,9 @@ bool g_isFistAnimating = false;    // Is the open/close animation currently runn
 bool g_isFistTargetClosed = false; // The state we are animating towards (true=closed, false=open)
 float g_fistAnimationProgress = 0.0f; // 0.0 = fully open, 1.0 = fully closed
 
+// --- Weapon State Variable ---
+bool g_isWeaponVisible = false; // Is the weapon currently equipped/visible?
+
 // Define the joint angles for the open and closed poses
 const float FINGER_OPEN_ANGLES[3] = { -10.0f, -15.0f, -10.0f };
 const float FINGER_CLOSED_ANGLES[3] = { -45.0f, -60.0f, -45.0f };
@@ -100,9 +103,9 @@ float g_rightWaveProgress = 0.0f;  // Animation progress for right hand (0=down,
 // Define the "raised" pose for the elbow
 const float ARM_POSE_WAVE_ELBOW = -100.0f;
 
-const float PEACE_STRAIGHT_ANGLES[3] = { -85.0f, -90.0f, -70.0f }; // Use the "curled" values for "straight"
-const float PEACE_CURLED_ANGLES[3] = { -5.0f, -10.0f, -10.0f }; // Use the "straight" values for "curled"
-const float PEACE_THUMB_ANGLE = -85.0f; // Use a large angle to tuck it in
+const float PEACE_STRAIGHT_ANGLES[3] = { -5.0f, -10.0f, -10.0f };
+const float PEACE_CURLED_ANGLES[3] = { -85.0f, -90.0f, -70.0f };
+const float PEACE_THUMB_ANGLE = -60.0f;
 
 // --- Hand Pose Animation Variables ---
 int g_handPoseTarget = 0;        // 0 = Normal, 1 = Peace Sign
@@ -180,12 +183,18 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 			g_handPoseTarget = (g_handPoseTarget == 0) ? 1 : 0; // Toggle target
 		}
 
+		// --- Toggle Weapon Visibility ---
+		if (wParam == 'H') {
+			g_isWeaponVisible = !g_isWeaponVisible;
+		}
+
 		if (wParam == VK_SPACE) {
 			resetAnimation();
 			g_isLeftWaveActive = false;
 			g_isRightWaveActive = false;
-			g_handPoseTarget = 0; // Reset target
-			g_handPoseProgress = 0.0f; // Reset progress
+			g_handPoseTarget = 0; 
+			g_handPoseProgress = 0.0f; 
+			g_isWeaponVisible = false;
 		}
 		break;
 
@@ -860,57 +869,264 @@ void drawSmoothLowerBodyAndSkirt()
 	glDisable(GL_TEXTURE_2D);
 }
 
+void drawDiamondKneeJoint()
+{
+	glPushMatrix();
+	// NOTE: This function inherits the gold material from drawLegs()
+
+	// --- NEW: Enable and apply the fire texture ---
+	glEnable(GL_TEXTURE_2D);
+	// We use g_fireTextureID because it already has Fire.bmp loaded
+	glBindTexture(GL_TEXTURE_2D, g_fireTextureID);
+	// This blends the fire texture with the existing gold material and lighting
+	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+
+	// Y-scale (height) is kept long to allow for overlap
+	glScalef(0.2f, 0.45f, 0.2f); // X, Y (height), Z scale
+
+	// This rotation orients the diamond correctly
+	glRotatef(45.0f, 0.0f, 1.0f, 0.0f);
+
+	// Define the 6 points of our diamond (an octahedron)
+	float p[6][3] = {
+		{ 0.0f,  1.0f,  0.0f}, // Top
+		{ 0.0f, -1.0f,  0.0f}, // Bottom
+		{ 1.0f,  0.0f,  0.0f}, // Right
+		{-1.0f,  0.0f,  0.0f}, // Left
+		{ 0.0f,  0.0f,  1.0f}, // Front
+		{ 0.0f,  0.0f, -1.0f}  // Back
+	};
+
+	// --- NEW: Define texture coordinates for the 6 points ---
+	// This maps points on the 2D fire image to the 3D diamond points.
+	float t[6][2] = {
+		{0.5f, 1.0f}, // Top-middle of texture
+		{0.5f, 0.0f}, // Bottom-middle of texture
+		{1.0f, 0.5f}, // Middle-right of texture
+		{0.0f, 0.5f}, // Middle-left of texture
+		{0.5f, 0.5f}, // Center of texture
+		{0.5f, 0.5f}  // Center of texture
+	};
+
+	// An array to hold the calculated normals for each of the 8 faces
+	float n[8][3] = {
+		{ 0.707f,  0.707f,  0.707f}, { -0.707f,  0.707f,  0.707f},
+		{ -0.707f,  0.707f, -0.707f}, {  0.707f,  0.707f, -0.707f},
+		{ 0.707f, -0.707f,  0.707f}, { -0.707f, -0.707f,  0.707f},
+		{ -0.707f, -0.707f, -0.707f}, {  0.707f, -0.707f, -0.707f}
+	};
+
+	glBegin(GL_TRIANGLES);
+	// Top-Front-Right face
+	glNormal3fv(n[0]);
+	glTexCoord2fv(t[0]); glVertex3fv(p[0]);
+	glTexCoord2fv(t[4]); glVertex3fv(p[4]);
+	glTexCoord2fv(t[2]); glVertex3fv(p[2]);
+	// Top-Front-Left face
+	glNormal3fv(n[1]);
+	glTexCoord2fv(t[0]); glVertex3fv(p[0]);
+	glTexCoord2fv(t[3]); glVertex3fv(p[3]);
+	glTexCoord2fv(t[4]); glVertex3fv(p[4]);
+	// Top-Back-Left face
+	glNormal3fv(n[2]);
+	glTexCoord2fv(t[0]); glVertex3fv(p[0]);
+	glTexCoord2fv(t[5]); glVertex3fv(p[5]);
+	glTexCoord2fv(t[3]); glVertex3fv(p[3]);
+	// Top-Back-Right face
+	glNormal3fv(n[3]);
+	glTexCoord2fv(t[0]); glVertex3fv(p[0]);
+	glTexCoord2fv(t[2]); glVertex3fv(p[2]);
+	glTexCoord2fv(t[5]); glVertex3fv(p[5]);
+
+	// Bottom-Front-Right face
+	glNormal3fv(n[4]);
+	glTexCoord2fv(t[1]); glVertex3fv(p[1]);
+	glTexCoord2fv(t[2]); glVertex3fv(p[2]);
+	glTexCoord2fv(t[4]); glVertex3fv(p[4]);
+	// Bottom-Front-Left face
+	glNormal3fv(n[5]);
+	glTexCoord2fv(t[1]); glVertex3fv(p[1]);
+	glTexCoord2fv(t[4]); glVertex3fv(p[4]);
+	glTexCoord2fv(t[3]); glVertex3fv(p[3]);
+	// Bottom-Back-Left face
+	glNormal3fv(n[6]);
+	glTexCoord2fv(t[1]); glVertex3fv(p[1]);
+	glTexCoord2fv(t[3]); glVertex3fv(p[3]);
+	glTexCoord2fv(t[5]); glVertex3fv(p[5]);
+	// Bottom-Back-Right face
+	glNormal3fv(n[7]);
+	glTexCoord2fv(t[1]); glVertex3fv(p[1]);
+	glTexCoord2fv(t[5]); glVertex3fv(p[5]);
+	glTexCoord2fv(t[2]); glVertex3fv(p[2]);
+	glEnd();
+
+	// --- NEW: Disable texturing so it doesn't affect other objects ---
+	glDisable(GL_TEXTURE_2D);
+
+	glPopMatrix();
+}
+
+void drawSphere(float r, int slices, int stacks)
+{
+	const int MAX_STACKS = 50; // adjust if needed
+	float profile[MAX_STACKS + 1][2];
+
+	int count = 0;
+	for (int i = 0; i <= stacks; i++)
+	{
+		float theta = (float)i / stacks * 3.14159f; // 0 → PI
+		float y = r * cos(theta);
+		float x = r * sin(theta);
+		profile[count][0] = x;
+		profile[count][1] = y;
+		count++;
+	}
+
+	drawLathedObject(profile, count, slices);
+}
+
+void drawWeapon()
+{
+	// Set material for a shiny, magical weapon
+	GLfloat mat_ambient[] = { 0.7f, 0.7f, 1.0f, 1.0f }; // Bluish ambient
+	GLfloat mat_diffuse[] = { 0.8f, 0.8f, 1.0f, 1.0f }; // Bright blue/purple diffuse
+	GLfloat mat_specular[] = { 1.0f, 1.0f, 1.0f, 1.0f }; // Bright white highlight
+	GLfloat mat_shininess[] = { 120.0f };
+	glMaterialfv(GL_FRONT, GL_AMBIENT, mat_ambient);
+	glMaterialfv(GL_FRONT, GL_DIFFUSE, mat_diffuse);
+	glMaterialfv(GL_FRONT, GL_SPECULAR, mat_specular);
+	glMaterialfv(GL_FRONT, GL_SHININESS, mat_shininess);
+
+	glPushMatrix();
+
+	// --- THIS IS THE ADJUSTED TRANSFORMATION BLOCK ---
+
+	// Step 1: Position the staff's pivot point slightly in front of the palm's center.
+	// MODIFIED: Adjusted the Z-translation to move the staff slightly outwards.
+	glTranslatef(0.0f, 0.0f, 0.15f); // Changed from 0.05f to 0.15f
+
+	// Step 2: Rotate it to a natural holding angle.
+	glRotatef(-75.0f, 0.0f, 0.0f, 1.0f);
+	glRotatef(30.0f, 1.0f, 0.0f, 0.0f);
+
+	// Step 3: After rotating, move the staff along its NEW down-axis to sit in the hand.
+	glTranslatef(0.0f, -0.9f, 0.0f);
+
+	// --- END OF ADJUSTED BLOCK ---
+
+
+	// Now, draw the staff parts (this code remains the same)
+	// --- 1. Draw the Staff Shaft ---
+	glColor3f(0.3f, 0.2f, 0.4f);
+	float shaft_profile[][2] = { {0.04f, 0.0f}, {0.04f, 1.8f} };
+	drawLathedObject(shaft_profile, 2, 12);
+
+	// --- 2. Draw the Crystal Topper ---
+	glPushMatrix();
+	glTranslatef(0.0f, 1.95f, 0.0f);
+	glScalef(1.0f, 1.5f, 1.0f);
+
+	glDisable(GL_LIGHTING);
+	glColor3f(0.8f, 0.9f, 1.0f);
+	drawDiamondKneeJoint();
+	glEnable(GL_LIGHTING);
+	glPopMatrix();
+
+	// --- 3. Draw Decorative Elements ---
+	glColor3f(1.0f, 0.84f, 0.0f);
+
+	// Top holder for the crystal
+	glPushMatrix();
+	glTranslatef(0.0f, 1.85f, 0.0f);
+	drawSphere(0.1f, 16, 16);
+	glPopMatrix();
+
+	// Bottom pommel
+	glPushMatrix();
+	glTranslatef(0.0f, 0.0f, 0.0f);
+	drawSphere(0.08f, 16, 16);
+	glPopMatrix();
+
+	glPopMatrix();
+}
+
 void drawSmoothArms()
 {
-	// Set the base colour to white for proper texturing for all arm parts
-	glColor3f(1.0f, 1.0f, 1.0f);
-	float upper_arm_profile[][2] = { {0.08f, 0.0f}, {0.08f, -0.5f} };
-	float lower_arm_profile[][2] = { {0.07f, 0.0f}, {0.07f, -0.4f} };
-
-	// Enable texturing ONCE for both arms and hands
-	glEnable(GL_TEXTURE_2D);
-	glBindTexture(GL_TEXTURE_2D, g_orangeTextureID);
-	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+	// This function will first draw the left arm completely,
+	// then draw the right arm and conditionally draw the weapon with it.
 
 	// --- Left Arm ---
 	glPushMatrix();
-	glTranslatef(-0.6f, 0.7f, 0.0f);
-	glRotatef(g_leftArmAngles[0], 0.0f, 0.0f, 1.0f);
-	glRotatef(g_leftArmAngles[1], 1.0f, 0.0f, 0.0f);
+	{
+		glColor3f(1.0f, 1.0f, 1.0f);
+		glEnable(GL_TEXTURE_2D);
+		glBindTexture(GL_TEXTURE_2D, g_orangeTextureID);
+		glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 
-	drawLathedObject(upper_arm_profile, 2, 12);
-	glTranslatef(0.0f, -0.5f, 0.0f);
+		glTranslatef(-0.6f, 0.7f, 0.0f);
+		glRotatef(g_leftArmAngles[0], 0.0f, 0.0f, 1.0f);
+		glRotatef(g_leftArmAngles[1], 1.0f, 0.0f, 0.0f);
 
-	float finalLeftElbowAngle = g_leftArmAngles[2] + (ARM_POSE_WAVE_ELBOW - g_leftArmAngles[2]) * g_leftWaveProgress;
-	glRotatef(finalLeftElbowAngle, 1.0f, 0.0f, 0.0f);
+		float upper_arm_profile[][2] = { {0.08f, 0.0f}, {0.08f, -0.5f} };
+		drawLathedObject(upper_arm_profile, 2, 12);
+		glTranslatef(0.0f, -0.5f, 0.0f);
 
-	drawLathedObject(lower_arm_profile, 2, 12);
-	glTranslatef(0.0f, -0.4f, 0.0f);
+		float finalLeftElbowAngle = g_leftArmAngles[2] + (ARM_POSE_WAVE_ELBOW - g_leftArmAngles[2]) * g_leftWaveProgress;
+		glRotatef(finalLeftElbowAngle, 1.0f, 0.0f, 0.0f);
 
-	glRotatef(70.0f, 0.0f, 1.0f, 0.0f);
-	drawHand(true); // drawHand now inherits the texture state
+		float lower_arm_profile[][2] = { {0.07f, 0.0f}, {0.07f, -0.4f} };
+		drawLathedObject(lower_arm_profile, 2, 12);
+		glTranslatef(0.0f, -0.4f, 0.0f);
+
+		glRotatef(70.0f, 0.0f, 1.0f, 0.0f);
+		drawHand(true);
+	}
 	glPopMatrix();
 
-	// --- Right Arm ---
+	// --- Right Arm & Weapon ---
 	glPushMatrix();
-	glTranslatef(0.6f, 0.7f, 0.0f);
-	glRotatef(g_rightArmAngles[0], 0.0f, 0.0f, 1.0f);
-	glRotatef(g_rightArmAngles[1], 1.0f, 0.0f, 0.0f);
+	{
+		glColor3f(1.0f, 1.0f, 1.0f);
+		glEnable(GL_TEXTURE_2D);
+		glBindTexture(GL_TEXTURE_2D, g_orangeTextureID);
+		glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 
-	drawLathedObject(upper_arm_profile, 2, 12);
-	glTranslatef(0.0f, -0.5f, 0.0f);
+		glTranslatef(0.6f, 0.7f, 0.0f);
+		glRotatef(g_rightArmAngles[0], 0.0f, 0.0f, 1.0f);
+		glRotatef(g_rightArmAngles[1], 1.0f, 0.0f, 0.0f);
 
-	float finalRightElbowAngle = g_rightArmAngles[2] + (ARM_POSE_WAVE_ELBOW - g_rightArmAngles[2]) * g_rightWaveProgress;
-	glRotatef(finalRightElbowAngle, 1.0f, 0.0f, 0.0f);
+		float upper_arm_profile[][2] = { {0.08f, 0.0f}, {0.08f, -0.5f} };
+		drawLathedObject(upper_arm_profile, 2, 12);
+		glTranslatef(0.0f, -0.5f, 0.0f);
 
-	drawLathedObject(lower_arm_profile, 2, 12);
-	glTranslatef(0.0f, -0.4f, 0.0f);
+		float finalRightElbowAngle = g_rightArmAngles[2] + (ARM_POSE_WAVE_ELBOW - g_rightArmAngles[2]) * g_rightWaveProgress;
+		glRotatef(finalRightElbowAngle, 1.0f, 0.0f, 0.0f);
 
-	glRotatef(-70.0f, 0.0f, 1.0f, 0.0f);
-	drawHand(false); // drawHand now inherits the texture state
+		float lower_arm_profile[][2] = { {0.07f, 0.0f}, {0.07f, -0.4f} };
+		drawLathedObject(lower_arm_profile, 2, 12);
+		glTranslatef(0.0f, -0.4f, 0.0f);
+
+		glRotatef(-70.0f, 0.0f, 1.0f, 0.0f);
+
+		// --- NEW LOGIC: Force hand to grip when weapon is visible ---
+		float original_fist_progress = g_fistAnimationProgress; // Save the current hand state
+		if (g_isWeaponVisible) {
+			g_fistAnimationProgress = 1.0f; // Force the hand to be fully closed
+		}
+
+		drawHand(false);
+
+		g_fistAnimationProgress = original_fist_progress; // Restore the hand state
+		// --- END OF NEW LOGIC ---
+
+		// Draw the weapon if it's visible
+		if (g_isWeaponVisible) {
+			drawWeapon();
+		}
+	}
 	glPopMatrix();
 
-	// Disable texturing ONCE after BOTH arms and hands are drawn
+	// Final cleanup
 	glDisable(GL_TEXTURE_2D);
 }
 
@@ -1213,25 +1429,6 @@ void drawBackSashes()
 	drawOneSash(false);  // right sash
 
 	gluDeleteQuadric(quad);
-}
-
-void drawSphere(float r, int slices, int stacks)
-{
-	const int MAX_STACKS = 50; // adjust if needed
-	float profile[MAX_STACKS + 1][2];
-
-	int count = 0;
-	for (int i = 0; i <= stacks; i++)
-	{
-		float theta = (float)i / stacks * 3.14159f; // 0 → PI
-		float y = r * cos(theta);
-		float x = r * sin(theta);
-		profile[count][0] = x;
-		profile[count][1] = y;
-		count++;
-	}
-
-	drawLathedObject(profile, count, slices);
 }
 
 void drawCone(float base, float height, int slices, int stacks)
@@ -1600,103 +1797,6 @@ void drawBraid(float yOffset, float zOffset)
 
 	glPopMatrix();
 	gluDeleteQuadric(quad);
-}
-
-void drawDiamondKneeJoint()
-{
-	glPushMatrix();
-	// NOTE: This function inherits the gold material from drawLegs()
-
-	// --- NEW: Enable and apply the fire texture ---
-	glEnable(GL_TEXTURE_2D);
-	// We use g_fireTextureID because it already has Fire.bmp loaded
-	glBindTexture(GL_TEXTURE_2D, g_fireTextureID);
-	// This blends the fire texture with the existing gold material and lighting
-	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-
-	// Y-scale (height) is kept long to allow for overlap
-	glScalef(0.2f, 0.45f, 0.2f); // X, Y (height), Z scale
-
-	// This rotation orients the diamond correctly
-	glRotatef(45.0f, 0.0f, 1.0f, 0.0f);
-
-	// Define the 6 points of our diamond (an octahedron)
-	float p[6][3] = {
-		{ 0.0f,  1.0f,  0.0f}, // Top
-		{ 0.0f, -1.0f,  0.0f}, // Bottom
-		{ 1.0f,  0.0f,  0.0f}, // Right
-		{-1.0f,  0.0f,  0.0f}, // Left
-		{ 0.0f,  0.0f,  1.0f}, // Front
-		{ 0.0f,  0.0f, -1.0f}  // Back
-	};
-
-	// --- NEW: Define texture coordinates for the 6 points ---
-	// This maps points on the 2D fire image to the 3D diamond points.
-	float t[6][2] = {
-		{0.5f, 1.0f}, // Top-middle of texture
-		{0.5f, 0.0f}, // Bottom-middle of texture
-		{1.0f, 0.5f}, // Middle-right of texture
-		{0.0f, 0.5f}, // Middle-left of texture
-		{0.5f, 0.5f}, // Center of texture
-		{0.5f, 0.5f}  // Center of texture
-	};
-
-	// An array to hold the calculated normals for each of the 8 faces
-	float n[8][3] = {
-		{ 0.707f,  0.707f,  0.707f}, { -0.707f,  0.707f,  0.707f},
-		{ -0.707f,  0.707f, -0.707f}, {  0.707f,  0.707f, -0.707f},
-		{ 0.707f, -0.707f,  0.707f}, { -0.707f, -0.707f,  0.707f},
-		{ -0.707f, -0.707f, -0.707f}, {  0.707f, -0.707f, -0.707f}
-	};
-
-	glBegin(GL_TRIANGLES);
-	// Top-Front-Right face
-	glNormal3fv(n[0]);
-	glTexCoord2fv(t[0]); glVertex3fv(p[0]);
-	glTexCoord2fv(t[4]); glVertex3fv(p[4]);
-	glTexCoord2fv(t[2]); glVertex3fv(p[2]);
-	// Top-Front-Left face
-	glNormal3fv(n[1]);
-	glTexCoord2fv(t[0]); glVertex3fv(p[0]);
-	glTexCoord2fv(t[3]); glVertex3fv(p[3]);
-	glTexCoord2fv(t[4]); glVertex3fv(p[4]);
-	// Top-Back-Left face
-	glNormal3fv(n[2]);
-	glTexCoord2fv(t[0]); glVertex3fv(p[0]);
-	glTexCoord2fv(t[5]); glVertex3fv(p[5]);
-	glTexCoord2fv(t[3]); glVertex3fv(p[3]);
-	// Top-Back-Right face
-	glNormal3fv(n[3]);
-	glTexCoord2fv(t[0]); glVertex3fv(p[0]);
-	glTexCoord2fv(t[2]); glVertex3fv(p[2]);
-	glTexCoord2fv(t[5]); glVertex3fv(p[5]);
-
-	// Bottom-Front-Right face
-	glNormal3fv(n[4]);
-	glTexCoord2fv(t[1]); glVertex3fv(p[1]);
-	glTexCoord2fv(t[2]); glVertex3fv(p[2]);
-	glTexCoord2fv(t[4]); glVertex3fv(p[4]);
-	// Bottom-Front-Left face
-	glNormal3fv(n[5]);
-	glTexCoord2fv(t[1]); glVertex3fv(p[1]);
-	glTexCoord2fv(t[4]); glVertex3fv(p[4]);
-	glTexCoord2fv(t[3]); glVertex3fv(p[3]);
-	// Bottom-Back-Left face
-	glNormal3fv(n[6]);
-	glTexCoord2fv(t[1]); glVertex3fv(p[1]);
-	glTexCoord2fv(t[3]); glVertex3fv(p[3]);
-	glTexCoord2fv(t[5]); glVertex3fv(p[5]);
-	// Bottom-Back-Right face
-	glNormal3fv(n[7]);
-	glTexCoord2fv(t[1]); glVertex3fv(p[1]);
-	glTexCoord2fv(t[5]); glVertex3fv(p[5]);
-	glTexCoord2fv(t[2]); glVertex3fv(p[2]);
-	glEnd();
-
-	// --- NEW: Disable texturing so it doesn't affect other objects ---
-	glDisable(GL_TEXTURE_2D);
-
-	glPopMatrix();
 }
 
 void drawLegs()
