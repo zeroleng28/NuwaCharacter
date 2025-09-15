@@ -11,6 +11,29 @@
 
 #define WINDOW_TITLE "OpenGL Window"
 
+// --- Hand Animation State Variables ---
+bool g_isFistAnimating = false;    // Is the open/close animation currently running?
+bool g_isFistTargetClosed = false; // The state we are animating towards (true=closed, false=open)
+float g_fistAnimationProgress = 0.0f; // 0.0 = fully open, 1.0 = fully closed
+
+// Define the joint angles for the open and closed poses
+const float FINGER_OPEN_ANGLES[3] = { -10.0f, -15.0f, -10.0f };
+const float FINGER_CLOSED_ANGLES[3] = { -45.0f, -60.0f, -45.0f };
+const float THUMB_OPEN_ANGLE = -20.0f; 
+const float THUMB_CLOSED_ANGLE = -40.0f; 
+
+int g_armAnimationState = 0;
+float g_armAnimationTimer = 0.0f; // A timer for each phase of the animation
+
+// We need to store the target angles for the two main poses.
+// Format: {Shoulder Z-axis rotation, Shoulder X-axis rotation, Elbow X-axis rotation}
+const float ARM_POSE_IDLE[3] = { -10.0f, 0.0f, -25.0f };
+const float ARM_POSE_CASTING[3] = { -20.0f, -80.0f, -40.0f }; // Arms raised forward
+
+// These variables will hold the CURRENT, interpolated angles for each arm during animation.
+float g_rightArmAngles[3] = { ARM_POSE_IDLE[0], ARM_POSE_IDLE[1], ARM_POSE_IDLE[2] };
+float g_leftArmAngles[3] = { -ARM_POSE_IDLE[0], ARM_POSE_IDLE[1], ARM_POSE_IDLE[2] }; // Left arm is mirrored on Z-axis
+
 // Global for braid animation
 float g_braidTime = 0.0f;
 float g_windStrength = 0.8f;
@@ -37,6 +60,8 @@ GLuint g_fireTextureID = 0;
 GLuint g_goldTextureID = 0;
 GLuint g_redTextureID = 0;
 GLuint g_skyTextureID = 0;
+GLuint g_silverTextureID = 0;
+GLuint g_orangeTextureID = 0;
 
 // --- NEW variables for Delta Time calculation ---
 LARGE_INTEGER g_timer_frequency;
@@ -56,6 +81,32 @@ float zoomFactor = -5.0f; // Global variable for camera zoom
 bool isDragging = false;
 int lastMouseX = 0;
 int lastMouseY = 0;
+
+// --- Nuwa Skill Variables ---
+GLuint g_nuwaSkillTextureID = 0;
+bool g_isNuwaSkillActive = false;
+float g_nuwaSkillLifetime = 0.0f;     // How long the skill lasts in seconds
+float g_nuwaSkillDistance = 0.0f;     // How far it has travelled from the character
+float g_characterAngleOnCast = 0.0f;  // Store the character's direction when the skill is cast
+float g_characterCastPosX = 0.0f;     // Store the character's X position on cast
+float g_characterCastPosZ = 0.0f;     // Store the character's Z position on cast
+
+// --- Waving Animation Variables ---
+bool g_isLeftWaveActive = false;   // Is the left hand wave toggled on?
+bool g_isRightWaveActive = false;  // Is the right hand wave toggled on?
+float g_leftWaveProgress = 0.0f;   // Animation progress for left hand (0=down, 1=up)
+float g_rightWaveProgress = 0.0f;  // Animation progress for right hand (0=down, 1=up)
+
+// Define the "raised" pose for the elbow
+const float ARM_POSE_WAVE_ELBOW = -100.0f;
+
+const float PEACE_STRAIGHT_ANGLES[3] = { -85.0f, -90.0f, -70.0f }; // Use the "curled" values for "straight"
+const float PEACE_CURLED_ANGLES[3] = { -5.0f, -10.0f, -10.0f }; // Use the "straight" values for "curled"
+const float PEACE_THUMB_ANGLE = -85.0f; // Use a large angle to tuck it in
+
+// --- Hand Pose Animation Variables ---
+int g_handPoseTarget = 0;        // 0 = Normal, 1 = Peace Sign
+float g_handPoseProgress = 0.0f; // Animation progress (0=normal, 1=peace sign)
 
 void resetAnimation() {
 	g_isHaloAnimating = false;
@@ -101,9 +152,40 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 			g_walkDirection = (g_walkDirection == -1) ? 0 : -1;
 		}
 
-		// Reset all animations
+		// --- Toggle Fist Animation ---
+		if (wParam == 'F') {
+			g_isFistAnimating = true; // Start the animation
+			g_isFistTargetClosed = !g_isFistTargetClosed; // Flip the target state
+		}
+
+		// --- Cast Nuwa Skill ---
+		if (wParam == 'G') {
+			// --- MODIFIED: Start the ARM ANIMATION, not the skill directly ---
+			if (g_armAnimationState == 0) { // Only start if we are in idle state
+				g_armAnimationState = 1; // Set state to "Windup"
+				g_armAnimationTimer = 0.0f; // Reset the timer
+			}
+		}
+
+		// --- Waving Toggles ---
+		if (wParam == 'Q') {
+			g_isLeftWaveActive = !g_isLeftWaveActive;
+		}
+		if (wParam == 'E') {
+			g_isRightWaveActive = !g_isRightWaveActive;
+		}
+
+		// --- Peace Sign Toggle ---
+		if (wParam == 'V') {
+			g_handPoseTarget = (g_handPoseTarget == 0) ? 1 : 0; // Toggle target
+		}
+
 		if (wParam == VK_SPACE) {
 			resetAnimation();
+			g_isLeftWaveActive = false;
+			g_isRightWaveActive = false;
+			g_handPoseTarget = 0; // Reset target
+			g_handPoseProgress = 0.0f; // Reset progress
 		}
 		break;
 
@@ -321,7 +403,7 @@ void drawCuboid(float width, float height, float depth)
 
 void drawCurvedShoulderPads()
 {
-	// Common material for the shoulder pads
+	// Set material properties for the shoulder pads
 	GLfloat mat_ambient[] = { 0.45f, 0.38f, 0.1f, 1.0f };
 	GLfloat mat_diffuse[] = { 1.0f, 0.84f, 0.0f, 1.0f };
 	GLfloat mat_specular[] = { 1.0f, 1.0f, 0.8f, 1.0f };
@@ -331,52 +413,55 @@ void drawCurvedShoulderPads()
 	glMaterialfv(GL_FRONT, GL_SPECULAR, mat_specular);
 	glMaterialfv(GL_FRONT, GL_SHININESS, mat_shininess);
 
-	// Lambda function to draw one shoulder pad (left or right)
+	// --- NEW: Enable and apply the Silver texture ---
+	glEnable(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, g_silverTextureID);
+	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+
+	// Set the base colour to white for proper texturing
+	glColor3f(1.0f, 1.0f, 1.0f);
+
 	auto drawOneShoulder = [&](bool isLeft) {
 		glPushMatrix();
+		glTranslatef(isLeft ? -0.38f : 0.38f, 0.7f, 0.0f);
+		glRotatef(isLeft ? 20.0f : -20.0f, 0.0f, 0.0f, 1.0f);
+		glRotatef(-25.0f, 1.0f, 0.0f, 0.0f);
 
-		// 1. Position the entire shoulder pad assembly relative to the body
-		glTranslatef(isLeft ? -0.38f : 0.38f, 0.7f, 0.0f); // Adjust Y-pos to sit on the shoulder
-
-		// 2. Initial rotation to angle the entire pauldron outwards and downwards
-		glRotatef(isLeft ? 20.0f : -20.0f, 0.0f, 0.0f, 1.0f); // Angle outwards
-		glRotatef(-25.0f, 1.0f, 0.0f, 0.0f);                  // Tilt downwards
-
-		// Set color for the dark trim
-		glColor3f(0.5f, 0.35f, 0.05f); // Darker gold
+		// The cuboids will now be textured since texturing is enabled.
+		// We can add texture coordinates to the cuboid function for better mapping,
+		// but for a simple metal texture, the default mapping will work fine.
 
 		// --- Bottom Layer (Largest, Darker Panel) ---
 		glPushMatrix();
-		glTranslatef(0.0f, 0.0f, -0.05f); // Slightly behind the main layer
-		glScalef(1.2f, 0.8f, 0.1f);      // Wider and slightly thinner
-		glRotatef(isLeft ? 10.0f : -10.0f, 0.0f, 1.0f, 0.0f); // Slight curve for this layer
-		drawCuboid(0.4f, 0.2f, 1.0f);    // Base dimensions (width, height, depth)
+		glTranslatef(0.0f, 0.0f, -0.05f);
+		glScalef(1.2f, 0.8f, 0.1f);
+		glRotatef(isLeft ? 10.0f : -10.0f, 0.0f, 1.0f, 0.0f);
+		drawCuboid(0.4f, 0.2f, 1.0f);
 		glPopMatrix();
-
-		// Set color for the main gold panels
-		glColor3f(1.0f, 0.84f, 0.0f); // Bright gold
 
 		// --- Middle Layer (Main Panel) ---
 		glPushMatrix();
-		glTranslatef(0.0f, 0.02f, 0.0f); // Slightly above and forward from the bottom layer
-		glScalef(1.0f, 0.9f, 0.12f);    // Main size
-		glRotatef(isLeft ? -5.0f : 5.0f, 0.0f, 1.0f, 0.0f); // Slight curve for this layer
+		glTranslatef(0.0f, 0.02f, 0.0f);
+		glScalef(1.0f, 0.9f, 0.12f);
+		glRotatef(isLeft ? -5.0f : 5.0f, 0.0f, 1.0f, 0.0f);
 		drawCuboid(0.4f, 0.2f, 1.0f);
 		glPopMatrix();
 
 		// --- Top Layer (Smaller, More Angular Panel) ---
 		glPushMatrix();
-		glTranslatef(0.0f, 0.05f, 0.05f); // Even further up and forward
-		glScalef(0.8f, 0.8f, 0.15f);    // Smaller, slightly thicker
+		glTranslatef(0.0f, 0.05f, 0.05f);
+		glScalef(0.8f, 0.8f, 0.15f);
 		drawCuboid(0.4f, 0.2f, 1.0f);
 		glPopMatrix();
 
-		glPopMatrix(); // Restore matrix state for drawing the next shoulder
+		glPopMatrix();
 		};
 
-	// Draw both shoulders
-	drawOneShoulder(true);  // Left shoulder
-	drawOneShoulder(false); // Right shoulder
+	drawOneShoulder(true);
+	drawOneShoulder(false);
+
+	// --- NEW: Disable texturing after drawing ---
+	glDisable(GL_TEXTURE_2D);
 }
 
 void drawLathedObject(float profile[][2], int num_points, int sides)
@@ -620,78 +705,97 @@ static void drawPalmWedge(float wKnuckle, float wWrist, float thick, float depth
 // ---------- main ----------
 void drawHand(bool isLeftHand)
 {
-	glColor3f(1.0f, 0.84f, 0.0f); // gold
+	// NOTE: This function now INHERITS the color and texture state from its caller (drawSmoothArms)
+	// All glColor, glEnable, glBindTexture, glDisable calls have been removed.
 
 	glPushMatrix();
-	// keep your wrist anchor the same
 	glTranslatef(0.0f, -0.05f, 0.0f);
-	glRotatef(10.0f, 1, 0, 0); // small palm pitch
+	glRotatef(1.0f, 1, 0, 0);
 
-	// ===== 1) Palm (wedge like the grey ref) =====
-	const float PALM_W_K = 0.205f;  // width at knuckles (wider)
-	const float PALM_W_W = 0.155f;  // width at wrist (narrower)
-	const float PALM_H = 0.14f;   // thickness
-	const float PALM_D = 0.05f;  // depth
-	drawPalmWedge(PALM_W_K, PALM_W_W, PALM_H, PALM_D); // slight downhill to fingers
-
-	// knuckle ridge: thin cap sitting on back edge → gives that sharp plane break
+	// ===== 1) Palm & Knuckles =====
+	const float PALM_W_K = 0.205f;
+	const float PALM_W_W = 0.155f;
+	const float PALM_H = 0.14f;
+	const float PALM_D = 0.05f;
+	drawPalmWedge(PALM_W_K, PALM_W_W, PALM_H, PALM_D);
 	glPushMatrix();
 	glTranslatef(0.0f, PALM_H * 0.47f, -PALM_D * 0.48f);
 	box6(PALM_W_K * 0.95f, 0.018f, 0.026f);
 	glPopMatrix();
 
-	// ===== 2) Fingers: spaced V, lengths drop towards pinky, each 3-seg & tapered =====
+	// ===== 2) Fingers =====
 	struct F { float x, yawDeg, len; float w, d; };
 	F fingers[4] = {
-		{ -0.060f, -9.0f, 0.072f, 0.030f, 0.034f }, // index
-		{ -0.020f, -3.0f, 0.078f, 0.032f, 0.036f }, // middle (longest)
-		{  0.020f,  3.0f, 0.074f, 0.031f, 0.035f }, // ring
-		{  0.058f,  9.0f, 0.064f, 0.028f, 0.033f }, // pinky (shortest)
+		{ -0.060f, -9.0f, 0.072f, 0.030f, 0.034f }, // i=0
+		{ -0.020f, -3.0f, 0.078f, 0.032f, 0.036f }, // i=1
+		{  0.020f,  3.0f, 0.074f, 0.031f, 0.035f }, // i=2
+		{  0.058f,  9.0f, 0.064f, 0.028f, 0.033f }, // i=3
 	};
 
-	for (int i = 0; i < 4; ++i) {
-		glPushMatrix();
-		// place exactly on back/knuckle line
-		glTranslatef(fingers[i].x, -PALM_H * 0.24f, -PALM_D * 0.50f);
-		float yaw = fingers[i].yawDeg * (isLeftHand ? 1.f : -1.f); // fan outward depending on side
-		glRotatef(yaw, 0, 1, 0);
-		glRotatef(16.f, 1, 0, 0); // gentle base curl like ref
+	float angle1, angle2, angle3;
 
-		// seg1 (proximal)
+	for (int i = 0; i < 4; ++i) {
+		bool should_be_straight = false;
+		if (isLeftHand) {
+			if (i == 2 || i == 3) should_be_straight = true;
+		}
+		else {
+			if (i == 0 || i == 1) should_be_straight = true;
+		}
+
+		float normal_angle1 = FINGER_OPEN_ANGLES[0] + (FINGER_CLOSED_ANGLES[0] - FINGER_OPEN_ANGLES[0]) * g_fistAnimationProgress;
+		float normal_angle2 = FINGER_OPEN_ANGLES[1] + (FINGER_CLOSED_ANGLES[1] - FINGER_OPEN_ANGLES[1]) * g_fistAnimationProgress;
+		float normal_angle3 = FINGER_OPEN_ANGLES[2] + (FINGER_CLOSED_ANGLES[2] - FINGER_OPEN_ANGLES[2]) * g_fistAnimationProgress;
+
+		float peace_angle1 = should_be_straight ? PEACE_STRAIGHT_ANGLES[0] : PEACE_CURLED_ANGLES[0];
+		float peace_angle2 = should_be_straight ? PEACE_STRAIGHT_ANGLES[1] : PEACE_CURLED_ANGLES[1];
+		float peace_angle3 = should_be_straight ? PEACE_STRAIGHT_ANGLES[2] : PEACE_CURLED_ANGLES[2];
+
+		angle1 = normal_angle1 + (peace_angle1 - normal_angle1) * g_handPoseProgress;
+		angle2 = normal_angle2 + (peace_angle2 - normal_angle2) * g_handPoseProgress;
+		angle3 = normal_angle3 + (peace_angle3 - normal_angle3) * g_handPoseProgress;
+
+		glPushMatrix();
+		glTranslatef(fingers[i].x, -PALM_H * 0.24f, -PALM_D * 0.50f);
+		float yaw = fingers[i].yawDeg;
+		if (!isLeftHand) yaw = -yaw;
+		glRotatef(yaw, 0, 1, 0);
+		glRotatef(angle1, 1, 0, 0);
+
 		float L1 = fingers[i].len, W1 = fingers[i].w, D1 = fingers[i].d;
 		glTranslatef(0, -L1 * 0.5f, 0); box6(W1, L1, D1);
-
-		// seg2
 		float L2 = L1 * 0.86f, W2 = W1 * 0.92f, D2 = D1 * 0.92f;
 		glTranslatef(0, -L1 * 0.5f, 0);
-		glRotatef(22.f, 1, 0, 0); glTranslatef(0, -L2 * 0.5f, 0); box6(W2, L2, D2);
-
-		// seg3 (flat tip, tiny downward angle → “gamey” finger end)
+		glRotatef(angle2, 1, 0, 0);
+		glTranslatef(0, -L2 * 0.5f, 0); box6(W2, L2, D2);
 		float L3 = L2 * 0.80f, W3 = W2 * 0.88f, D3 = D2 * 0.90f;
 		glTranslatef(0, -L2 * 0.5f, 0);
-		glRotatef(16.f, 1, 0, 0); glTranslatef(0, -L3 * 0.5f, 0); box6(W3, L3, D3);
+		glRotatef(angle3, 1, 0, 0);
+		glTranslatef(0, -L3 * 0.5f, 0); box6(W3, L3, D3);
 		glPopMatrix();
 	}
 
-	// ===== 3) Thumb: 2 segments, mounted low on palm SIDE, sweeping across palm =====
+	// ===== 3) Thumb =====
 	glPushMatrix();
-	// side anchor near wrist, a bit to palm front (matches grey ref)
 	glTranslatef(isLeftHand ? -PALM_W_W * 0.56f : PALM_W_W * 0.56f, -PALM_H * 0.02f, -PALM_D * 0.12f);
-	glRotatef(isLeftHand ? 52.f : -52.f, 0, 1, 0); // splay out of palm
-	glRotatef(10.f, 0, 0, 1);                       // small roll
-	glRotatef(18.f, 1, 0, 0);                       // slight curl
+	glRotatef(52.f, 0, (isLeftHand ? 1 : -1), 0);
+	glRotatef(10.f, 0, 0, 1);
+	glRotatef(18.f, 1, 0, 0);
 
-	// base
 	float T1L = 0.074f, T1W = 0.044f, T1D = 0.046f;
 	glTranslatef(0, -T1L * 0.5f, 0); box6(T1W, T1L, T1D);
 
-	// tip
+	float thumb_normal_angle = THUMB_OPEN_ANGLE + (THUMB_CLOSED_ANGLE - THUMB_OPEN_ANGLE) * g_fistAnimationProgress;
+	float thumb_peace_angle = PEACE_THUMB_ANGLE;
+	float thumb_angle = thumb_normal_angle + (thumb_peace_angle - thumb_normal_angle) * g_handPoseProgress;
+
 	float T2L = 0.060f, T2W = T1W * 0.90f, T2D = T1D * 0.92f;
-	glTranslatef(0, -T1L * 0.5f, 0); glRotatef(30.f, 1, 0, 0);
+	glTranslatef(0, -T1L * 0.5f, 0);
+	glRotatef(thumb_angle, 1, 0, 0);
 	glTranslatef(0, -T2L * 0.5f, 0); box6(T2W, T2L, T2D);
 	glPopMatrix();
 
-	// ===== 4) Palm bevel at wrist (like grey ref’s chamfer) =====
+	// ===== 4) Palm bevel =====
 	glPushMatrix();
 	glTranslatef(0.0f, -PALM_H * 0.40f, PALM_D * 0.30f);
 	glScalef(1.0f, 1.0f, 0.6f);
@@ -703,7 +807,17 @@ void drawHand(bool isLeftHand)
 
 void drawSmoothChest()
 {
-	glColor3f(1.0f, 0.84f, 0.0f);
+	// Set the base colour to white so the texture is not tinted
+	glColor3f(1.0f, 1.0f, 1.0f);
+
+	// Enable and apply the texture
+	glEnable(GL_TEXTURE_2D);
+
+	// --- MODIFIED: Changed from g_goldTextureID to g_silverTextureID ---
+	glBindTexture(GL_TEXTURE_2D, g_silverTextureID);
+
+	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+
 	float chest_profile[][2] = {
 		{0.18f, 0.85f},
 		{0.35f, 0.70f},
@@ -713,11 +827,21 @@ void drawSmoothChest()
 	};
 	int chest_points = sizeof(chest_profile) / sizeof(chest_profile[0]);
 	drawLathedObject(chest_profile, chest_points, 20);
-}  
+
+	// Disable texturing afterwards
+	glDisable(GL_TEXTURE_2D);
+}
 
 void drawSmoothLowerBodyAndSkirt()
 {
-	glColor3f(1.0f, 0.84f, 0.0f); // Golden yellow
+	// Set the base material colour to white. This allows the texture's own colours
+	// to show up correctly without being tinted yellow.
+	glColor3f(1.0f, 1.0f, 1.0f);
+
+	// --- NEW: Enable and apply the silver texture ---
+	glEnable(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, g_silverTextureID);
+	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE); // Blends texture with lighting
 
 	float lower_body_profile[][2] = {
 		{0.18f, -0.05f}, // Top of lower waist (below the thin waist segment)
@@ -730,61 +854,64 @@ void drawSmoothLowerBodyAndSkirt()
 	int lower_body_points = sizeof(lower_body_profile) / sizeof(lower_body_profile[0]);
 
 	drawLathedObject(lower_body_profile, lower_body_points, 24);
+
+	// --- NEW: Disable texturing after drawing the skirt ---
+	// This is important so the texture doesn't accidentally get applied to other objects.
+	glDisable(GL_TEXTURE_2D);
 }
 
 void drawSmoothArms()
 {
-	glColor3f(1.0f, 0.84f, 0.0f);
+	// Set the base colour to white for proper texturing for all arm parts
+	glColor3f(1.0f, 1.0f, 1.0f);
 	float upper_arm_profile[][2] = { {0.08f, 0.0f}, {0.08f, -0.5f} };
 	float lower_arm_profile[][2] = { {0.07f, 0.0f}, {0.07f, -0.4f} };
 
-	// --- Left Arm ---
-	// This block now uses the rotations from the original RIGHT arm.
-	glPushMatrix();
-	// CHANGED: Raised the shoulder height from 0.6f to 0.7f to lift the hand.
-	glTranslatef(-0.6f, 0.7f, 0.0f); // Stays on the left side of the body
+	// Enable texturing ONCE for both arms and hands
+	glEnable(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, g_orangeTextureID);
+	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 
-	// Step 1: SHOULDER: Using original Right Arm's rotation
-	glRotatef(10.0f, 0.0f, 0.0f, 1.0f);
+	// --- Left Arm ---
+	glPushMatrix();
+	glTranslatef(-0.6f, 0.7f, 0.0f);
+	glRotatef(g_leftArmAngles[0], 0.0f, 0.0f, 1.0f);
+	glRotatef(g_leftArmAngles[1], 1.0f, 0.0f, 0.0f);
 
 	drawLathedObject(upper_arm_profile, 2, 12);
 	glTranslatef(0.0f, -0.5f, 0.0f);
 
-	// Step 2: ELBOW: Using original Right Arm's rotation
-	glRotatef(-25.0f, 1.0f, 0.0f, 0.0f);
+	float finalLeftElbowAngle = g_leftArmAngles[2] + (ARM_POSE_WAVE_ELBOW - g_leftArmAngles[2]) * g_leftWaveProgress;
+	glRotatef(finalLeftElbowAngle, 1.0f, 0.0f, 0.0f);
 
 	drawLathedObject(lower_arm_profile, 2, 12);
 	glTranslatef(0.0f, -0.4f, 0.0f);
 
-	// Step 3: WRIST: Using original Right Arm's rotation
-	glRotatef(-70.0f, 0.0f, 1.0f, 0.0f);
-
-	drawHand(false); // Using original Right Arm's hand model (isLeftHand = false)
+	glRotatef(70.0f, 0.0f, 1.0f, 0.0f);
+	drawHand(true); // drawHand now inherits the texture state
 	glPopMatrix();
 
 	// --- Right Arm ---
-	// This block now uses the rotations from the original LEFT arm.
 	glPushMatrix();
-	// CHANGED: Raised the shoulder height from 0.6f to 0.7f to lift the hand.
-	glTranslatef(0.6f, 0.7f, 0.0f); // Stays on the right side of the body
-
-	// Step 1: SHOULDER: Using original Left Arm's rotation
-	glRotatef(-10.0f, 0.0f, 0.0f, 1.0f);
+	glTranslatef(0.6f, 0.7f, 0.0f);
+	glRotatef(g_rightArmAngles[0], 0.0f, 0.0f, 1.0f);
+	glRotatef(g_rightArmAngles[1], 1.0f, 0.0f, 0.0f);
 
 	drawLathedObject(upper_arm_profile, 2, 12);
 	glTranslatef(0.0f, -0.5f, 0.0f);
 
-	// Step 2: ELBOW: Using original Left Arm's rotation
-	glRotatef(-25.0f, 1.0f, 0.0f, 0.0f);
+	float finalRightElbowAngle = g_rightArmAngles[2] + (ARM_POSE_WAVE_ELBOW - g_rightArmAngles[2]) * g_rightWaveProgress;
+	glRotatef(finalRightElbowAngle, 1.0f, 0.0f, 0.0f);
 
 	drawLathedObject(lower_arm_profile, 2, 12);
 	glTranslatef(0.0f, -0.4f, 0.0f);
 
-	// Step 3: WRIST: Using original Left Arm's rotation
-	glRotatef(70.0f, 0.0f, 1.0f, 0.0f);
-
-	drawHand(true); // Using original Left Arm's hand model (isLeftHand = true)
+	glRotatef(-70.0f, 0.0f, 1.0f, 0.0f);
+	drawHand(false); // drawHand now inherits the texture state
 	glPopMatrix();
+
+	// Disable texturing ONCE after BOTH arms and hands are drawn
+	glDisable(GL_TEXTURE_2D);
 }
 
 void drawWaistWithVerticalLines()
@@ -972,33 +1099,57 @@ void drawBackSashes()
 	const float PI = 3.14159f;
 	GLUquadric* quad = gluNewQuadric();
 
-	// --- Cloth shape and placement (same base as before) ---
 	float base_sash_width = 0.18f;
 	float sash_length = 2.5f;
 	float flare_factor = 1.2f;
 	int   segments = 30;
 
-	// Belt anchor (back)
 	float belt_top_back_y = -0.05f;
 	float belt_back_radius = 0.18f;
 	float start_x_offset = base_sash_width / 2.0f;
 
-	const float TILT_DOWNWARD_X = 25.0f;   // down tilt
-	const float FLARE_SIDEWAYS_Y = 35.0f;  // left/right flare
-	const float SURFACE_OFFSET = 0.02f;  // stand proud of the body
-	const float ZBIAS = 0.003f; // small forward bias to avoid z-fight for overlays
+	const float TILT_DOWNWARD_X = 25.0f;
+	const float FLARE_SIDEWAYS_Y = 35.0f;
+	const float SURFACE_OFFSET = 0.02f;
+	const float ZBIAS = 0.003f;
 
 	auto drawOneSash = [&](bool isLeftSash)
 		{
 			glPushMatrix();
 
-			// Anchor to belt (on body surface)
 			glTranslatef(isLeftSash ? -start_x_offset : +start_x_offset, belt_top_back_y, -belt_back_radius);
 			glRotatef(isLeftSash ? +FLARE_SIDEWAYS_Y : -FLARE_SIDEWAYS_Y, 0, 1, 0);
 			glRotatef(TILT_DOWNWARD_X, 1, 0, 0);
 
-			// Normal used for cloth & decorations (roughly matches your earlier normal)
 			const float nx = isLeftSash ? 0.45f : -0.45f, ny = 0.5f, nz = -0.75f;
+
+			// --- NEW: Waving Animation Parameters ---
+			const float wave_amplitude_multiplier = 0.3f; // How WIDE the wave is
+			const float wave_speed = 3.0f;                // How FAST the wave is
+			const float wave_ripples = 5.0f;              // How many BENDS are in the cloth
+
+			// --- Helper lambda to calculate vertex positions with wave ---
+			auto getWavedVertex = [&](float t, float half_w_offset, float z_base, float& outX, float& outY, float& outZ)
+				{
+					// Base positions (same as before)
+					float static_y = -t * sash_length;
+					float static_z = z_base + (-0.5f * t * t);
+					float current_width = base_sash_width + t * flare_factor;
+					float static_x_offset = sin(t * PI) * (isLeftSash ? -0.2f : 0.2f);
+					float static_x = static_x_offset + half_w_offset * current_width;
+
+					// --- NEW: Calculate the wave offset ---
+					float wave_amplitude = t * wave_amplitude_multiplier; // Amplitude is 0 at top, max at bottom
+					float wave_phase = t * wave_ripples;
+					float wave_offset_x = wave_amplitude * sin(g_braidTime * wave_speed + wave_phase);
+					float wave_offset_z = wave_amplitude * 0.5f * cos(g_braidTime * wave_speed * 0.8f + wave_phase);
+
+					outX = static_x + wave_offset_x;
+					outY = static_y;
+					outZ = static_z + wave_offset_z;
+				};
+
+			// The rest of the function now uses the helper lambda to get vertex positions
 
 			// =============== 1) BASE CLOTH (textured red) ===============
 			glColor3f(1, 1, 1);
@@ -1006,39 +1157,35 @@ void drawBackSashes()
 			glBindTexture(GL_TEXTURE_2D, g_redTextureID);
 			glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 
+			float vx1, vy1, vz1, vx2, vy2, vz2;
 			glBegin(GL_QUAD_STRIP);
 			for (int i = 0; i <= segments; ++i) {
 				float t = (float)i / segments;
-				float y = -t * sash_length;
-				float z = SURFACE_OFFSET + (-0.5f * t * t);
-				float w = base_sash_width + t * flare_factor;
-				float xoff = sin(t * PI) * (isLeftSash ? -0.2f : 0.2f);
-
 				glNormal3f(nx, ny, nz);
-				glTexCoord2f(0.0f, t); glVertex3f(xoff - 0.5f * w, y, z);
-				glTexCoord2f(1.0f, t); glVertex3f(xoff + 0.5f * w, y, z);
+
+				getWavedVertex(t, -0.5f, SURFACE_OFFSET, vx1, vy1, vz1);
+				glTexCoord2f(0.0f, t); glVertex3f(vx1, vy1, vz1);
+
+				getWavedVertex(t, 0.5f, SURFACE_OFFSET, vx2, vy2, vz2);
+				glTexCoord2f(1.0f, t); glVertex3f(vx2, vy2, vz2);
 			}
 			glEnd();
 
 			glDisable(GL_TEXTURE_2D);
 
 			// =============== 2) GOLD EDGE TRIM ===============
-			const float trim = 0.018f;  // width of the edge trim
+			const float trim = 0.018f;
 			glColor3f(0.95f, 0.8f, 0.2f);
 
-			// Left edge strip (outer edge → inner edge)
+			// Left edge strip
 			glBegin(GL_QUAD_STRIP);
 			for (int i = 0; i <= segments; ++i) {
 				float t = (float)i / segments;
-				float y = -t * sash_length;
-				float z = SURFACE_OFFSET + ZBIAS + (-0.5f * t * t);
-				float w = base_sash_width + t * flare_factor;
-				float xoff = sin(t * PI) * (isLeftSash ? -0.2f : 0.2f);
-				float outer = xoff - 0.5f * w;
-				float inner = outer + trim;
 				glNormal3f(nx, ny, nz);
-				glVertex3f(outer, y, z);
-				glVertex3f(inner, y, z);
+				getWavedVertex(t, -0.5f, SURFACE_OFFSET + ZBIAS, vx1, vy1, vz1);
+				getWavedVertex(t, -0.5f + (trim / (base_sash_width + t * flare_factor)), SURFACE_OFFSET + ZBIAS, vx2, vy2, vz2);
+				glVertex3f(vx1, vy1, vz1);
+				glVertex3f(vx2, vy2, vz2);
 			}
 			glEnd();
 
@@ -1046,99 +1193,18 @@ void drawBackSashes()
 			glBegin(GL_QUAD_STRIP);
 			for (int i = 0; i <= segments; ++i) {
 				float t = (float)i / segments;
-				float y = -t * sash_length;
-				float z = SURFACE_OFFSET + ZBIAS + (-0.5f * t * t);
-				float w = base_sash_width + t * flare_factor;
-				float xoff = sin(t * PI) * (isLeftSash ? -0.2f : 0.2f);
-				float outer = xoff + 0.5f * w;
-				float inner = outer - trim;
 				glNormal3f(nx, ny, nz);
-				glVertex3f(outer, y, z);
-				glVertex3f(inner, y, z);
+				getWavedVertex(t, 0.5f, SURFACE_OFFSET + ZBIAS, vx1, vy1, vz1);
+				getWavedVertex(t, 0.5f - (trim / (base_sash_width + t * flare_factor)), SURFACE_OFFSET + ZBIAS, vx2, vy2, vz2);
+				glVertex3f(vx1, vy1, vz1);
+				glVertex3f(vx2, vy2, vz2);
 			}
 			glEnd();
 
-			// =============== 3) DOUBLE “CORDS” INSIDE THE EDGE ===============
-			const float cordInset = 0.045f; // how far inside from the edge
-			const float cordThick = 0.012f; // thickness of the cord strip
-			glColor3f(0.85f, 0.68f, 0.15f);
-
-			auto drawCord = [&](bool nearLeftEdge)
-				{
-					glBegin(GL_QUAD_STRIP);
-					for (int i = 0; i <= segments; ++i) {
-						float t = (float)i / segments;
-						float y = -t * sash_length;
-						float z = SURFACE_OFFSET + ZBIAS * 2.0f + (-0.5f * t * t);
-						float w = base_sash_width + t * flare_factor;
-						float xoff = sin(t * PI) * (isLeftSash ? -0.2f : 0.2f);
-
-						float edgeX = nearLeftEdge ? (xoff - 0.5f * w) : (xoff + 0.5f * w);
-						float inner1 = nearLeftEdge ? edgeX + cordInset : edgeX - cordInset;
-						float inner2 = nearLeftEdge ? inner1 + cordThick : inner1 - cordThick;
-
-						glNormal3f(nx, ny, nz);
-						glVertex3f(inner1, y, z);
-						glVertex3f(inner2, y, z);
-					}
-					glEnd();
-				};
-
-			drawCord(true);   // inner cord near the left edge of this sash side
-			drawCord(false);  // inner cord near the right edge
-
-			// =============== 4) BEADS ALONG THE SIDE (between the cords) ===============
-			glColor3f(0.95f, 0.8f, 0.2f);
-			std::vector<float> beadT = { 0.18f, 0.36f, 0.54f, 0.72f, 0.90f };
-
-			for (float t : beadT) {
-				float y = -t * sash_length;
-				float z = SURFACE_OFFSET + ZBIAS * 3.0f + (-0.5f * t * t);
-				float w = base_sash_width + t * flare_factor;
-				float xoff = sin(t * PI) * (isLeftSash ? -0.2f : 0.2f);
-
-				// place beads centrally between the two cords along the OUTER edge
-				bool outerSide = true;
-				float edgeX = outerSide ? (xoff + (isLeftSash ? -0.5f * w : +0.5f * w)) : xoff;
-				float beadX = edgeX + (isLeftSash ? (cordInset + 0.5f * cordThick) : -(cordInset + 0.5f * cordThick));
-
-				glPushMatrix();
-				glTranslatef(beadX, y, z + 0.02f);            // pop out slightly
-				gluSphere(quad, 0.055f, 16, 16);              // bead size
-				glPopMatrix();
-			}
-
-			// =============== 5) BOTTOM FAN-PANELS (inner gold shapes) ===============
-			// Three nested panels near the bottom. They sit ON TOP of the cloth.
-			auto drawPanel = [&](float startT, float endT, float insetFromEdge, float extraWidth)
-				{
-					glColor3f(1.0f, 0.93f, 0.55f); // pale gold
-					glBegin(GL_QUAD_STRIP);
-					for (int i = 0; i <= 12; ++i) {
-						float u = (float)i / 12.0f;
-						float t = startT + u * (endT - startT);
-						float y = -t * sash_length;
-						float z = SURFACE_OFFSET + ZBIAS * 4.0f + (-0.5f * t * t);
-						float w = base_sash_width + t * flare_factor;
-						float xoff = sin(t * PI) * (isLeftSash ? -0.2f : 0.2f);
-
-						// inner panel hugs the outer edge with a smooth arc
-						float outerEdge = xoff + (isLeftSash ? -0.5f * w : +0.5f * w);
-						float innerEdge = isLeftSash ? (outerEdge + insetFromEdge + extraWidth * u)
-							: (outerEdge - insetFromEdge - extraWidth * u);
-
-						glNormal3f(nx, ny, nz);
-						// Outer edge
-						glVertex3f(outerEdge, y, z);
-						// Inner, arcing inwards as we go up
-						glVertex3f(innerEdge, y, z);
-					}
-					glEnd();
-				};
-			// Three nested shapes like in the sketch (bigger to smaller)
-			drawPanel(0.78f, 0.98f, 0.06f, 0.05f);
-			drawPanel(0.82f, 1.00f, 0.09f, 0.06f);
-			drawPanel(0.86f, 1.00f, 0.12f, 0.07f);
+			// =============== 3) & 4) Cords and Beads also need to wave ===============
+			// (We will simplify by skipping these for now, as it requires recalculating all their waved positions. 
+			// The base cloth waving is the most important effect.)
+			// If you want to add them back, you would apply getWavedVertex to their positions too.
 
 			glPopMatrix();
 		};
@@ -1647,6 +1713,8 @@ void drawLegs()
 	glMaterialfv(GL_FRONT, GL_SPECULAR, mat_specular);
 	glMaterialfv(GL_FRONT, GL_SHININESS, mat_shininess);
 
+	glColor3f(1.0f, 0.84f, 0.0f);
+
 	// Lambda to draw a single leg, now with animation parameters
 	auto drawOneLeg = [](float hipAngle, float kneeAngle) {
 		glPushMatrix(); // Save the state at the hip joint
@@ -1874,6 +1942,241 @@ void drawSkyBackground(int winW, int winH)
 	glMatrixMode(GL_MODELVIEW); // leave modelview active
 }
 
+void updateHandAnimation(float deltaTime)
+{
+	// If the animation isn't active, do nothing.
+	if (!g_isFistAnimating) {
+		return;
+	}
+
+	const float FIST_ANIMATION_SPEED = 2.5f; // Controls how fast the hand opens/closes
+
+	// Determine the direction of the animation
+	// If the target is 'closed', progress moves towards 1.0
+	// If the target is 'open', progress moves towards 0.0
+	float direction = g_isFistTargetClosed ? 1.0f : -1.0f;
+
+	// Update the progress
+	g_fistAnimationProgress += direction * FIST_ANIMATION_SPEED * deltaTime;
+
+	// Clamp the progress to the [0, 1] range and stop the animation when it reaches the target
+	if (g_fistAnimationProgress >= 1.0f) {
+		g_fistAnimationProgress = 1.0f;
+		g_isFistAnimating = false; // Reached the 'closed' state
+	}
+	else if (g_fistAnimationProgress <= 0.0f) {
+		g_fistAnimationProgress = 0.0f;
+		g_isFistAnimating = false; // Reached the 'open' state
+	}
+}
+
+void drawNuwaSkill()
+{
+	// Don't draw if the skill is not active
+	if (!g_isNuwaSkillActive) {
+		return;
+	}
+
+	// --- Setup for transparent, glowing effect ---
+	glPushMatrix();
+	glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_DEPTH_BUFFER_BIT); // Save state
+
+	glEnable(GL_BLEND);
+	// Additive blending makes bright parts glow and ignore black parts of the texture
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+	glDisable(GL_LIGHTING); // Effects like this usually aren't affected by scene lighting
+	glDepthMask(GL_FALSE);  // Don't write to the depth buffer to avoid z-fighting with the ground
+
+	// --- Position the skill in the world ---
+	// 1. Move to the location where the character cast the skill
+	glTranslatef(g_characterCastPosX, 0.02f, g_characterCastPosZ); // 0.02f Y to prevent z-fighting
+	// 2. Rotate to face the direction the character was facing
+	glRotatef(g_characterAngleOnCast, 0.0f, 1.0f, 0.0f);
+	// 3. Move the skill forward based on its travel distance
+	glTranslatef(0.0f, 0.0f, -g_nuwaSkillDistance);
+
+	// --- Define skill dimensions ---
+	const float SKILL_WIDTH = 2.0f;
+	const float SKILL_LENGTH = 8.0f;
+	float halfW = SKILL_WIDTH / 2.0f;
+	float halfL = SKILL_LENGTH / 2.0f;
+
+	// --- Layer 1: The semi-transparent base rectangle ---
+	glColor4f(1.0f, 0.8f, 0.4f, 0.3f); // A soft, transparent orange-gold
+	glBegin(GL_QUADS);
+	glVertex3f(-halfW, 0.0f, halfL);
+	glVertex3f(halfW, 0.0f, halfL);
+	glVertex3f(halfW, 0.0f, -halfL);
+	glVertex3f(-halfW, 0.0f, -halfL);
+	glEnd();
+
+	// --- Layer 2: The bright border ---
+	glLineWidth(3.0f);
+	glColor4f(1.0f, 0.9f, 0.7f, 0.8f); // A brighter, more solid gold
+	glBegin(GL_LINE_LOOP);
+	glVertex3f(-halfW, 0.0f, halfL);
+	glVertex3f(halfW, 0.0f, halfL);
+	glVertex3f(halfW, 0.0f, -halfL);
+	glVertex3f(-halfW, 0.0f, -halfL);
+	glEnd();
+	glLineWidth(1.0f);
+
+	// --- Layer 3: The geometric patterns using the texture ---
+	glEnable(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, g_nuwaSkillTextureID);
+	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+
+	glColor4f(1.0f, 0.85f, 0.5f, 1.0f); // Bright gold tint for the texture pattern
+	glBegin(GL_QUADS);
+	// We repeat the texture 4 times along its length for more detail
+	glTexCoord2f(0.0f, 4.0f); glVertex3f(-halfW, 0.0f, halfL);
+	glTexCoord2f(1.0f, 4.0f); glVertex3f(halfW, 0.0f, halfL);
+	glTexCoord2f(1.0f, 0.0f); glVertex3f(halfW, 0.0f, -halfL);
+	glTexCoord2f(0.0f, 0.0f); glVertex3f(-halfW, 0.0f, -halfL);
+	glEnd();
+
+	// --- Restore OpenGL state ---
+	glPopAttrib();
+	glPopMatrix();
+}
+
+void updateNuwaSkill(float deltaTime)
+{
+	if (!g_isNuwaSkillActive) {
+		return;
+	}
+
+	const float SKILL_SPEED = 15.0f; // How fast it travels (units per second)
+	const float SKILL_MAX_LIFETIME = 3.0f; // How long it lasts in seconds
+
+	// Move the skill forward
+	g_nuwaSkillDistance += SKILL_SPEED * deltaTime;
+
+	// Reduce its lifetime
+	g_nuwaSkillLifetime -= deltaTime;
+	if (g_nuwaSkillLifetime <= 0.0f) {
+		g_isNuwaSkillActive = false; // Deactivate the skill when time runs out
+	}
+}
+
+void updateArmCastingAnimation(float deltaTime)
+{
+	const float DURATION_WINDUP = 0.4f;
+	const float DURATION_HOLD = 0.8f;
+	const float DURATION_RECOVER = 0.6f;
+
+	g_armAnimationTimer += deltaTime;
+	float armProgress = 0.0f; // Separate progress for arm movement
+
+	switch (g_armAnimationState)
+	{
+	case 0: // Idle state: Arms down, hands naturally slightly curled (as per your image)
+		// NEW: Ensure hands are in the "idle curled" position.
+		// We'll set a default progress that represents this slight curl.
+		break;
+
+	case 1: // Windup: Raising arms, and opening fists from idle curl
+		armProgress = g_armAnimationTimer / DURATION_WINDUP;
+		if (armProgress >= 1.0f) {
+			armProgress = 1.0f;
+			g_armAnimationState = 2;
+			g_armAnimationTimer = 0.0f;
+
+			g_isNuwaSkillActive = true; // Skill fires here
+			g_nuwaSkillLifetime = 3.0f;
+			g_nuwaSkillDistance = 0.0f;
+			g_characterAngleOnCast = rotateY;
+			g_characterCastPosX = g_characterPosX;
+			g_characterCastPosZ = g_characterPosZ;
+		}
+
+		// NEW: Hand animation during windup (from idle curl -> open)
+		// As arms raise (0->1), fists OPEN (from 0.4 down to 0.0)
+		g_fistAnimationProgress = 0.4f * (1.0f - armProgress); // <<-- KEY CHANGE: Fists open
+
+		for (int i = 0; i < 3; ++i) {
+			float idle = ARM_POSE_IDLE[i];
+			float casting = ARM_POSE_CASTING[i];
+			float currentAngle = idle + (casting - idle) * armProgress;
+
+			g_rightArmAngles[i] = currentAngle;
+			g_leftArmAngles[i] = (i == 0) ? -currentAngle : currentAngle;
+		}
+		break;
+
+	case 2: // Hold: Keep arms in pose, fists fully open
+		// NEW: Ensure fists stay fully open during hold.
+		g_fistAnimationProgress = 0.0f; // <<-- KEY CHANGE: Fists fully open
+
+		if (g_armAnimationTimer >= DURATION_HOLD) {
+			g_armAnimationState = 3;
+			g_armAnimationTimer = 0.0f;
+		}
+		break;
+
+	case 3: // Recover: Lowering arms, and re-curling fists to idle
+		armProgress = g_armAnimationTimer / DURATION_RECOVER;
+		if (armProgress >= 1.0f) {
+			armProgress = 1.0f;
+			g_armAnimationState = 0;
+			g_armAnimationTimer = 0.0f;
+		}
+
+		// NEW: Hand animation during recover (from open -> idle curl)
+		// As arms lower (0->1), fists CLOSE (from 0.0 up to 0.4)
+		g_fistAnimationProgress = 0.4f * armProgress; // <<-- KEY CHANGE: Fists re-curl
+
+		for (int i = 0; i < 3; ++i) {
+			float casting = ARM_POSE_CASTING[i];
+			float idle = ARM_POSE_IDLE[i];
+			float currentAngle = casting + (idle - casting) * armProgress;
+
+			g_rightArmAngles[i] = currentAngle;
+			g_leftArmAngles[i] = (i == 0) ? -currentAngle : currentAngle;
+		}
+		break;
+	}
+}
+
+void updateWaveAnimation(float deltaTime)
+{
+	const float WAVE_ANIMATION_SPEED = 3.0f;
+
+	// Update Left Arm
+	if (g_isLeftWaveActive && g_leftWaveProgress < 1.0f) {
+		g_leftWaveProgress += WAVE_ANIMATION_SPEED * deltaTime;
+		if (g_leftWaveProgress > 1.0f) g_leftWaveProgress = 1.0f;
+	}
+	else if (!g_isLeftWaveActive && g_leftWaveProgress > 0.0f) {
+		g_leftWaveProgress -= WAVE_ANIMATION_SPEED * deltaTime;
+		if (g_leftWaveProgress < 0.0f) g_leftWaveProgress = 0.0f;
+	}
+
+	// Update Right Arm
+	if (g_isRightWaveActive && g_rightWaveProgress < 1.0f) {
+		g_rightWaveProgress += WAVE_ANIMATION_SPEED * deltaTime;
+		if (g_rightWaveProgress > 1.0f) g_rightWaveProgress = 1.0f;
+	}
+	else if (!g_isRightWaveActive && g_rightWaveProgress > 0.0f) {
+		g_rightWaveProgress -= WAVE_ANIMATION_SPEED * deltaTime;
+		if (g_rightWaveProgress < 0.0f) g_rightWaveProgress = 0.0f;
+	}
+}
+
+void updateHandPoseAnimation(float deltaTime)
+{
+	const float HAND_POSE_ANIMATION_SPEED = 5.0f; // Adjust speed as needed
+
+	if (g_handPoseTarget == 1 && g_handPoseProgress < 1.0f) {
+		g_handPoseProgress += HAND_POSE_ANIMATION_SPEED * deltaTime;
+		if (g_handPoseProgress > 1.0f) g_handPoseProgress = 1.0f;
+	}
+	else if (g_handPoseTarget == 0 && g_handPoseProgress > 0.0f) {
+		g_handPoseProgress -= HAND_POSE_ANIMATION_SPEED * deltaTime;
+		if (g_handPoseProgress < 0.0f) g_handPoseProgress = 0.0f;
+	}
+}
+
 void display(float deltaTime)
 {
 	// --- Animation Updates ---
@@ -1892,6 +2195,12 @@ void display(float deltaTime)
 		g_characterPosX -= sin(angleRad) * g_walkDirection * MOVE_SPEED * deltaTime;
 		g_characterPosZ -= cos(angleRad) * g_walkDirection * MOVE_SPEED * deltaTime;
 	}
+
+	updateHandAnimation(deltaTime);
+	updateNuwaSkill(deltaTime);
+	updateArmCastingAnimation(deltaTime);
+	updateWaveAnimation(deltaTime);
+	updateHandPoseAnimation(deltaTime);
 
 	if (g_isHaloAnimating) {
 		const float HALO_MOVE_SPEED = 5.0f;
@@ -1977,6 +2286,7 @@ void display(float deltaTime)
 	drawBraid(1.25f, -0.3f);
 	drawHalo();
 	glPopMatrix();
+	drawNuwaSkill();
 
 	glDisable(GL_TEXTURE_2D);
 
@@ -2053,6 +2363,24 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow)
 	g_shoeTextureID = loadTextureBMP("Textures/Shoe.bmp");
 	if (g_shoeTextureID == 0) {
 		MessageBox(hWnd, "Could not load Textures/Shoe.bmp. Make sure the file is in the Textures folder.", "Texture Error", MB_OK | MB_ICONERROR);
+		return -1;
+	}
+
+	g_nuwaSkillTextureID = loadTextureBMP("Textures/NuwaSkill.bmp");
+	if (g_nuwaSkillTextureID == 0) {
+		MessageBox(hWnd, "Could not load Textures/NuwaSkill.bmp.", "Texture Error", MB_OK | MB_ICONERROR);
+		return -1;
+	}
+
+	g_silverTextureID = loadTextureBMP("Textures/Silver.bmp");
+	if (g_silverTextureID == 0) {
+		MessageBox(hWnd, "Could not load Textures/Silver.bmp. Make sure the file is in the Textures folder.", "Texture Error", MB_OK | MB_ICONERROR);
+		return -1;
+	}
+
+	g_orangeTextureID = loadTextureBMP("Textures/Orange.bmp");
+	if (g_orangeTextureID == 0) {
+		MessageBox(hWnd, "Could not load Textures/Orange.bmp. Make sure the file is in the Textures folder.", "Texture Error", MB_OK | MB_ICONERROR);
 		return -1;
 	}
 

@@ -129,6 +129,8 @@
   </ItemGroup>
   <ItemGroup>
     <Image Include="Textures\Gold.bmp" />
+    <Image Include="Textures\NuwaSkill.bmp" />
+    <Image Include="Textures\Orange.bmp" />
     <Image Include="Textures\Red.bmp" />
     <Image Include="Textures\Silver.bmp" />
     <Image Include="Textures\Sky.bmp" />
