@@ -17,7 +17,8 @@ bool g_isFistTargetClosed = false; // The state we are animating towards (true=c
 float g_fistAnimationProgress = 0.0f; // 0.0 = fully open, 1.0 = fully closed
 
 // --- Weapon State Variable ---
-bool g_isWeaponVisible = false; // Is the weapon currently equipped/visible?
+int g_equippedWeapon = 0;
+GLuint g_mirrorTextureID = 0;
 
 // Define the joint angles for the open and closed poses
 const float FINGER_OPEN_ANGLES[3] = { -10.0f, -15.0f, -10.0f };
@@ -223,16 +224,10 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 
 		// --- Toggle Weapon Visibility ---
 		if (wParam == 'H') {
-			g_isWeaponVisible = !g_isWeaponVisible;
-		}
-
-		if (wParam == VK_SPACE) {
-			resetAnimation();
-			g_isLeftWaveActive = false;
-			g_isRightWaveActive = false;
-			g_handPoseTarget = 0; 
-			g_handPoseProgress = 0.0f; 
-			g_isWeaponVisible = false;
+			g_equippedWeapon++;
+			if (g_equippedWeapon > 2) { // Cycle through 0, 1, 2
+				g_equippedWeapon = 0;
+			}
 		}
 
 		if (wParam == 'M') {
@@ -271,7 +266,7 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 			g_isRightWaveActive = false;
 			g_handPoseTarget = 0;
 			g_handPoseProgress = 0.0f;
-			g_isWeaponVisible = false;
+			g_equippedWeapon = 0;
 			g_isLevitating = false; 
 		}
 		break;
@@ -1063,6 +1058,98 @@ void drawSphere(float r, int slices, int stacks)
 	drawLathedObject(profile, count, slices);
 }
 
+void drawDivineMirror() {
+	glPushMatrix();
+
+	// --- 1. Position the Mirror ---
+	// We'll have it float gracefully near the character's right hand.
+	// This position is relative to the hand's location.
+	glTranslatef(0.3f, 0.2f, 0.5f);
+	glRotatef(-90.0f, 0.0f, 1.0f, 0.0f); // Face the mirror forward
+	glRotatef(-15.0f, 1.0f, 0.0f, 0.0f); // Tilt it slightly up
+
+	// Animate a slow, mystical rotation and hover
+	glRotatef(g_braidTime * 15.0f, 0.0f, 0.0f, 1.0f); // Slow spin
+	glTranslatef(0.0f, sin(g_braidTime) * 0.05f, 0.0f); // Gentle up-down bob
+
+	// --- 2. Set Material for the Frame (Shiny Silver/Jade) ---
+	GLfloat mat_ambient[] = { 0.8f, 0.9f, 0.8f, 1.0f };
+	GLfloat mat_diffuse[] = { 0.9f, 1.0f, 0.9f, 1.0f };
+	GLfloat mat_specular[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	GLfloat mat_shininess[] = { 100.0f };
+	glMaterialfv(GL_FRONT, GL_AMBIENT, mat_ambient);
+	glMaterialfv(GL_FRONT, GL_DIFFUSE, mat_diffuse);
+	glMaterialfv(GL_FRONT, GL_SPECULAR, mat_specular);
+	glMaterialfv(GL_FRONT, GL_SHININESS, mat_shininess);
+	glColor3f(0.9f, 1.0f, 0.9f);
+
+	// --- 3. Draw the Octagonal Frame ---
+	const int sides = 8;
+	const float outer_radius = 0.4f;
+	const float inner_radius = 0.35f;
+	const float thickness = 0.05f;
+
+	for (int i = 0; i < sides; ++i) {
+		float angle1 = (float)i / sides * 2.0f * 3.14159f;
+		float angle2 = (float)(i + 1) / sides * 2.0f * 3.14159f;
+
+		// Vertices for one segment of the frame
+		float v[8][3] = {
+			{ outer_radius * cos(angle1), outer_radius * sin(angle1),  thickness / 2.0f },
+			{ outer_radius * cos(angle2), outer_radius * sin(angle2),  thickness / 2.0f },
+			{ inner_radius * cos(angle2), inner_radius * sin(angle2),  thickness / 2.0f },
+			{ inner_radius * cos(angle1), inner_radius * sin(angle1),  thickness / 2.0f },
+			{ outer_radius * cos(angle1), outer_radius * sin(angle1), -thickness / 2.0f },
+			{ outer_radius * cos(angle2), outer_radius * sin(angle2), -thickness / 2.0f },
+			{ inner_radius * cos(angle2), inner_radius * sin(angle2), -thickness / 2.0f },
+			{ inner_radius * cos(angle1), inner_radius * sin(angle1), -thickness / 2.0f }
+		};
+
+		glBegin(GL_QUADS);
+		// Front face
+		glNormal3f(0, 0, 1);
+		glVertex3fv(v[0]); glVertex3fv(v[1]); glVertex3fv(v[2]); glVertex3fv(v[3]);
+		// Back face
+		glNormal3f(0, 0, -1);
+		glVertex3fv(v[4]); glVertex3fv(v[7]); glVertex3fv(v[6]); glVertex3fv(v[5]);
+		// Outer face
+		float nx_out = cos((angle1 + angle2) / 2.0f);
+		float ny_out = sin((angle1 + angle2) / 2.0f);
+		glNormal3f(nx_out, ny_out, 0);
+		glVertex3fv(v[0]); glVertex3fv(v[4]); glVertex3fv(v[5]); glVertex3fv(v[1]);
+		// Inner face
+		glNormal3f(-nx_out, -ny_out, 0);
+		glVertex3fv(v[3]); glVertex3fv(v[2]); glVertex3fv(v[6]); glVertex3fv(v[7]);
+		glEnd();
+	}
+
+	// --- 4. Draw the Mirror Surface ---
+	glEnable(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, g_mirrorTextureID); // Use the new mirror texture
+	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+
+	// Make the surface glow brightly
+	glDisable(GL_LIGHTING);
+	glColor3f(1.0f, 1.0f, 1.0f);
+
+	glBegin(GL_POLYGON);
+	glNormal3f(0, 0, 1);
+	for (int i = 0; i < sides; ++i) {
+		float angle = (float)i / sides * 2.0f * 3.14159f;
+		// Map vertices to a circular texture coordinate space
+		float u = 0.5f + 0.5f * cos(angle);
+		float v = 0.5f + 0.5f * sin(angle);
+		glTexCoord2f(u, v);
+		glVertex3f(inner_radius * cos(angle), inner_radius * sin(angle), 0.0f);
+	}
+	glEnd();
+
+	glEnable(GL_LIGHTING);
+	glDisable(GL_TEXTURE_2D);
+
+	glPopMatrix();
+}
+
 void drawWeapon()
 {
 	// Set material for a shiny, magical weapon
@@ -1188,7 +1275,7 @@ void drawSmoothArms()
 
 		// --- NEW LOGIC: Force hand to grip when weapon is visible ---
 		float original_fist_progress = g_fistAnimationProgress; // Save the current hand state
-		if (g_isWeaponVisible) {
+		if (g_equippedWeapon == 1) {
 			g_fistAnimationProgress = 1.0f; // Force the hand to be fully closed
 		}
 
@@ -1198,8 +1285,11 @@ void drawSmoothArms()
 		// --- END OF NEW LOGIC ---
 
 		// Draw the weapon if it's visible
-		if (g_isWeaponVisible) {
+		if (g_equippedWeapon == 1) {
 			drawWeapon();
+		}
+		else if (g_equippedWeapon == 2) { // If Mirror is equipped
+			drawDivineMirror();
 		}
 	}
 	glPopMatrix();
@@ -2433,7 +2523,6 @@ void updateMatrixBlocks(float deltaTime) {
 	}
 }
 
-// A helper function to draw all active blocks
 void drawMatrixBlocks() {
 	for (const auto& block : g_matrixBlocks) {
 		if (block.isActive) {
@@ -2654,6 +2743,12 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow)
 	g_matrixTextureID = loadTextureBMP("Textures/Matrix.bmp");
 	if (g_matrixTextureID == 0) {
 		MessageBox(hWnd, "Could not load Textures/Matrix.bmp.", "Texture Error", MB_OK | MB_ICONERROR);
+		return -1;
+	}
+
+	g_mirrorTextureID = loadTextureBMP("Textures/Mirror.bmp");
+	if (g_mirrorTextureID == 0) {
+		MessageBox(hWnd, "Could not load Textures/Mirror.bmp.", "Texture Error", MB_OK | MB_ICONERROR);
 		return -1;
 	}
 
