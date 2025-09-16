@@ -34,6 +34,8 @@ float g_armAnimationTimer = 0.0f; // A timer for each phase of the animation
 const float ARM_POSE_IDLE[3] = { -10.0f, 0.0f, -25.0f };
 const float ARM_POSE_CASTING[3] = { -20.0f, -80.0f, -40.0f }; // Arms raised forward
 
+const float ARM_POSE_WAVE[3] = { -90.0f, -30.0f, -90.0f };
+
 // These variables will hold the CURRENT, interpolated angles for each arm during animation.
 float g_rightArmAngles[3] = { ARM_POSE_IDLE[0], ARM_POSE_IDLE[1], ARM_POSE_IDLE[2] };
 float g_leftArmAngles[3] = { -ARM_POSE_IDLE[0], ARM_POSE_IDLE[1], ARM_POSE_IDLE[2] }; // Left arm is mirrored on Z-axis
@@ -118,6 +120,9 @@ float g_characterYOffset = 0.0f;
 float g_torsoTiltAngle = 0.0f;     
 float g_neckTiltAngle = 0.0f;      
 const float ARM_POSE_LEVITATE[3] = { -45.0f, -20.0f, -15.0f };
+
+bool g_isWaving = false;         
+float g_waveProgress = 0.0f;
 
 // --- ADD THIS NEAR THE TOP WITH OTHER GLOBAL VARIABLES ---
 
@@ -256,9 +261,8 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 			break;
 		}
 		if (wParam == 'L') {
-			g_isLevitating = !g_isLevitating; // 切换漂浮状态
+			g_isLevitating = !g_isLevitating;
 		}
-		// --- END OF ADDITION ---
 
 		if (wParam == VK_SPACE) {
 			resetAnimation();
@@ -819,10 +823,10 @@ void drawHand(bool isLeftHand)
 	for (int i = 0; i < 4; ++i) {
 		bool should_be_straight = false;
 		if (isLeftHand) {
-			if (i == 2 || i == 3) should_be_straight = true;
-		}
-		else {
 			if (i == 0 || i == 1) should_be_straight = true;
+		}
+		else { 
+			if (i == 2 || i == 3) should_be_straight = true;
 		}
 
 		float normal_angle1 = FINGER_OPEN_ANGLES[0] + (FINGER_CLOSED_ANGLES[0] - FINGER_OPEN_ANGLES[0]) * g_fistAnimationProgress;
@@ -2527,6 +2531,39 @@ void drawMatrixBlocks() {
 	for (const auto& block : g_matrixBlocks) {
 		if (block.isActive) {
 			drawSingleMatrixBlock(block);
+		}
+	}
+}
+
+void updateWavingAnimation(float deltaTime) {
+	const float WAVE_ANIMATION_SPEED = 2.0f; // Controls how fast the arm raises and lowers
+
+	// Update the animation progress
+	if (g_isWaving && g_waveProgress < 1.0f) {
+		g_waveProgress += WAVE_ANIMATION_SPEED * deltaTime;
+		if (g_waveProgress > 1.0f) g_waveProgress = 1.0f;
+	}
+	else if (!g_isWaving && g_waveProgress > 0.0f) {
+		g_waveProgress -= WAVE_ANIMATION_SPEED * deltaTime;
+		if (g_waveProgress < 0.0f) g_waveProgress = 0.0f;
+	}
+
+	// If the animation is active at all, update the right arm's position
+	if (g_waveProgress > 0.0f) {
+		for (int i = 0; i < 3; ++i) {
+			float idle = ARM_POSE_IDLE[i];
+			float wave = ARM_POSE_WAVE[i];
+			// Interpolate from idle to wave pose
+			g_rightArmAngles[i] = idle + (wave - idle) * g_waveProgress;
+		}
+
+		// Add the back-and-forth waving motion for the hand
+		// This only happens when the arm is fully raised
+		if (g_waveProgress >= 1.0f) {
+			const float waveFrequency = 10.0f;
+			const float waveAmplitude = 20.0f;
+			// Apply a sine wave rotation to the elbow joint
+			g_rightArmAngles[2] = ARM_POSE_WAVE[2] + sin(g_braidTime * waveFrequency) * waveAmplitude;
 		}
 	}
 }
