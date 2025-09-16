@@ -1,10 +1,11 @@
-﻿#include <Windows.h>
+﻿﻿#include <Windows.h>
 #include <gl/GL.h>
 #include <gl/GLU.h>
 #include <math.h>
 #include <vector>
 #include <stdio.h>
 #include <time.h> 
+
 
 #pragma comment (lib, "OpenGL32.lib")
 #pragma comment (lib, "GLU32.lib")
@@ -23,8 +24,8 @@ GLuint g_mirrorTextureID = 0;
 // Define the joint angles for the open and closed poses
 const float FINGER_OPEN_ANGLES[3] = { -10.0f, -15.0f, -10.0f };
 const float FINGER_CLOSED_ANGLES[3] = { -45.0f, -60.0f, -45.0f };
-const float THUMB_OPEN_ANGLE = -20.0f; 
-const float THUMB_CLOSED_ANGLE = -40.0f; 
+const float THUMB_OPEN_ANGLE = -20.0f;
+const float THUMB_CLOSED_ANGLE = -40.0f;
 
 int g_armAnimationState = 0;
 float g_armAnimationTimer = 0.0f; // A timer for each phase of the animation
@@ -115,13 +116,13 @@ int g_handPoseTarget = 0;        // 0 = Normal, 1 = Peace Sign
 float g_handPoseProgress = 0.0f; // Animation progress (0=normal, 1=peace sign)
 
 bool g_isLevitating = false;
-float g_levitationProgress = 0.0f;  
-float g_characterYOffset = 0.0f;   
-float g_torsoTiltAngle = 0.0f;     
-float g_neckTiltAngle = 0.0f;      
+float g_levitationProgress = 0.0f;
+float g_characterYOffset = 0.0f;
+float g_torsoTiltAngle = 0.0f;
+float g_neckTiltAngle = 0.0f;
 const float ARM_POSE_LEVITATE[3] = { -45.0f, -20.0f, -15.0f };
 
-bool g_isWaving = false;         
+bool g_isWaving = false;
 float g_waveProgress = 0.0f;
 
 // --- ADD THIS NEAR THE TOP WITH OTHER GLOBAL VARIABLES ---
@@ -271,7 +272,7 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 			g_handPoseTarget = 0;
 			g_handPoseProgress = 0.0f;
 			g_equippedWeapon = 0;
-			g_isLevitating = false; 
+			g_isLevitating = false;
 		}
 		break;
 
@@ -748,7 +749,7 @@ static void drawPalmWedge(float wKnuckle, float wWrist, float thick, float depth
 	glNormal3f(0, 1, 0);
 	glVertex3f(-ww, hk, dz);
 	glVertex3f(ww, hk, dz);
-	glVertex3f(wk, hk * 0.7f, -dz); 
+	glVertex3f(wk, hk * 0.7f, -dz);
 	glVertex3f(-wk, hk * 0.7f, -dz);
 
 	// bottom
@@ -825,7 +826,7 @@ void drawHand(bool isLeftHand)
 		if (isLeftHand) {
 			if (i == 0 || i == 1) should_be_straight = true;
 		}
-		else { 
+		else {
 			if (i == 2 || i == 3) should_be_straight = true;
 		}
 
