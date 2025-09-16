@@ -11,6 +11,8 @@
 
 #define WINDOW_TITLE "OpenGL Window"
 
+bool g_isWeaponVisible = false;
+
 // --- Hand Animation State Variables ---
 bool g_isFistAnimating = false;    // Is the open/close animation currently running?
 bool g_isFistTargetClosed = false; // The state we are animating towards (true=closed, false=open)
@@ -23,8 +25,8 @@ GLuint g_mirrorTextureID = 0;
 // Define the joint angles for the open and closed poses
 const float FINGER_OPEN_ANGLES[3] = { -10.0f, -15.0f, -10.0f };
 const float FINGER_CLOSED_ANGLES[3] = { -45.0f, -60.0f, -45.0f };
-const float THUMB_OPEN_ANGLE = -20.0f; 
-const float THUMB_CLOSED_ANGLE = -40.0f; 
+const float THUMB_OPEN_ANGLE = -20.0f;
+const float THUMB_CLOSED_ANGLE = -40.0f;
 
 int g_armAnimationState = 0;
 float g_armAnimationTimer = 0.0f; // A timer for each phase of the animation
@@ -49,7 +51,9 @@ int g_numBraidSegments = 15;      // INCREASE this to make the braid longer
 float g_characterPosX = 0.0f;
 float g_characterPosZ = 0.0f;
 float g_animationTime = 0.0f; // An accumulator for the animation cycle
-int g_walkDirection = 0;      // -1 for backward, 0 for idle, 1 for forward
+int g_forwardDirection = 0; // -1 for backward, 0 for idle, 1 for forward
+int g_strafeDirection = 0;  // -1 for left, 0 for idle, 1 for right
+float g_characterRotationY = 180.0f; // Stores the character's facing direction (180 = front)
 
 // --- NEW: Animation State Variables ---
 bool g_isHaloAnimating = false;
@@ -115,13 +119,13 @@ int g_handPoseTarget = 0;        // 0 = Normal, 1 = Peace Sign
 float g_handPoseProgress = 0.0f; // Animation progress (0=normal, 1=peace sign)
 
 bool g_isLevitating = false;
-float g_levitationProgress = 0.0f;  
-float g_characterYOffset = 0.0f;   
-float g_torsoTiltAngle = 0.0f;     
-float g_neckTiltAngle = 0.0f;      
+float g_levitationProgress = 0.0f;
+float g_characterYOffset = 0.0f;
+float g_torsoTiltAngle = 0.0f;
+float g_neckTiltAngle = 0.0f;
 const float ARM_POSE_LEVITATE[3] = { -45.0f, -20.0f, -15.0f };
 
-bool g_isWaving = false;         
+bool g_isWaving = false;
 float g_waveProgress = 0.0f;
 
 // --- ADD THIS NEAR THE TOP WITH OTHER GLOBAL VARIABLES ---
@@ -158,10 +162,12 @@ void resetAnimation() {
 	// Reset the light's position
 	memcpy(g_animatedLightPos, g_initialLightPos, sizeof(GLfloat) * 4);
 
-	// Reset walk animation state and character position
-	g_walkDirection = 0;
+	// Reset all movement and character states
 	g_characterPosX = 0.0f;
 	g_characterPosZ = 0.0f;
+	g_forwardDirection = 0;
+	g_strafeDirection = 0;
+	g_characterRotationY = 0.0f; // FIX: Reset character to face front. Was 180.0f
 }
 
 LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -173,33 +179,30 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 		break;
 
 	case WM_KEYDOWN:
-		// --- Handle all keyboard input ---
-
 		// Exit the application
 		if (wParam == VK_ESCAPE) PostQuitMessage(0);
 
-		// Start the halo animation
-		if (wParam == 'A') {
-			g_isHaloAnimating = true;
-		}
+		// --- Handle Arrow Key Presses to START movement ---
+		if (wParam == VK_UP)    g_forwardDirection = 1;
+		if (wParam == VK_DOWN)  g_forwardDirection = -1;
+		if (wParam == VK_LEFT)  g_strafeDirection = -1;
+		if (wParam == VK_RIGHT) g_strafeDirection = 1;
 
-		// Toggle forward walk
-		if (wParam == 'B') {
-			g_walkDirection = (g_walkDirection == 1) ? 0 : 1;
-		}
+		// --- NEW: Add Light Position Controls ---
+		if (wParam == 'W') g_animatedLightPos[1] += 0.5f; // Move light up
+		if (wParam == 'S') g_animatedLightPos[1] -= 0.5f; // Move light down
+		if (wParam == 'C') g_animatedLightPos[0] -= 0.5f; // Move light left
+		if (wParam == 'D') g_animatedLightPos[0] += 0.5f; // Move light right
+		if (wParam == 'Z') g_animatedLightPos[2] += 0.5f; // Move light near
+		if (wParam == 'X') g_animatedLightPos[2] -= 0.5f; // Move light far
 
-		// Toggle backward walk
-		if (wParam == 'C') {
-			g_walkDirection = (g_walkDirection == -1) ? 0 : -1;
-		}
 
-		// --- Toggle Fist Animation ---
+		// --- Other keybinds (unchanged) ---
+		if (wParam == 'A') g_isHaloAnimating = true;
 		if (wParam == 'F') {
-			g_isFistAnimating = true; // Start the animation
-			g_isFistTargetClosed = !g_isFistTargetClosed; // Flip the target state
+			g_isFistAnimating = true;
+			g_isFistTargetClosed = !g_isFistTargetClosed;
 		}
-
-		// --- Cast Nuwa Skill ---
 		if (wParam == 'G') {
 			if (g_armAnimationState == 0) {
 				g_armAnimationState = 1;
@@ -263,7 +266,10 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 		if (wParam == 'L') {
 			g_isLevitating = !g_isLevitating;
 		}
-
+		if (wParam == 'Q') g_isLeftWaveActive = !g_isLeftWaveActive;
+		if (wParam == 'E') g_isRightWaveActive = !g_isRightWaveActive;
+		if (wParam == 'V') g_handPoseTarget = (g_handPoseTarget == 0) ? 1 : 0;
+		if (wParam == 'H') g_isWeaponVisible = !g_isWeaponVisible;
 		if (wParam == VK_SPACE) {
 			resetAnimation();
 			g_isLeftWaveActive = false;
@@ -271,8 +277,16 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 			g_handPoseTarget = 0;
 			g_handPoseProgress = 0.0f;
 			g_equippedWeapon = 0;
-			g_isLevitating = false; 
+			g_isLevitating = false;
 		}
+		break;
+
+	case WM_KEYUP:
+		// --- Handle Key Releases to STOP movement ---
+		if (wParam == VK_UP && g_forwardDirection == 1)    g_forwardDirection = 0;
+		if (wParam == VK_DOWN && g_forwardDirection == -1)  g_forwardDirection = 0;
+		if (wParam == VK_LEFT && g_strafeDirection == -1)  g_strafeDirection = 0;
+		if (wParam == VK_RIGHT && g_strafeDirection == 1) g_strafeDirection = 0;
 		break;
 
 	case WM_LBUTTONDOWN:
@@ -320,7 +334,6 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 		if (zoomFactor < -20.0f) zoomFactor = -20.0f;
 		break;
 	}
-
 
 	default:
 		break;
@@ -748,7 +761,7 @@ static void drawPalmWedge(float wKnuckle, float wWrist, float thick, float depth
 	glNormal3f(0, 1, 0);
 	glVertex3f(-ww, hk, dz);
 	glVertex3f(ww, hk, dz);
-	glVertex3f(wk, hk * 0.7f, -dz); 
+	glVertex3f(wk, hk * 0.7f, -dz);
 	glVertex3f(-wk, hk * 0.7f, -dz);
 
 	// bottom
@@ -825,7 +838,7 @@ void drawHand(bool isLeftHand)
 		if (isLeftHand) {
 			if (i == 0 || i == 1) should_be_straight = true;
 		}
-		else { 
+		else {
 			if (i == 2 || i == 3) should_be_straight = true;
 		}
 
@@ -1849,32 +1862,135 @@ void drawEars()
 	glPopAttrib();
 }
 
-void drawFace()
+void drawLipShape(const std::vector<std::pair<float, float>>& profile, float depth) {
+	glBegin(GL_QUAD_STRIP);
+	for (size_t i = 0; i < profile.size(); ++i) {
+		float x = profile[i].first;
+		float y = profile[i].second;
+
+		// Calculate a simple normal pointing outwards from the curve
+		if (i < profile.size() - 1) {
+			float next_x = profile[i + 1].first;
+			float next_y = profile[i + 1].second;
+			float dx = next_x - x;
+			float dy = next_y - y;
+			// The normal is perpendicular to the line segment, pointing slightly forward
+			glNormal3f(dy, -dx, 0.5f);
+		}
+
+		// Front vertex
+		glVertex3f(x, y, depth / 2.0f);
+		// Back vertex
+		glVertex3f(x, y, -depth / 2.0f);
+	}
+	glEnd();
+
+	// Draw the front face of the lips
+	glBegin(GL_POLYGON);
+	glNormal3f(0.0f, 0.0f, 1.0f);
+	for (const auto& p : profile) {
+		glVertex3f(p.first, p.second, depth / 2.0f);
+	}
+	glEnd();
+}
+
+void drawLips()
 {
-	// Apply the same golden material to the head and ears
-	GLfloat mat_ambient[] = { 0.55f, 0.38f, 0.1f, 1.0f };
-	GLfloat mat_diffuse[] = { 1.0f, 0.84f, 0.0f, 1.0f };
-	GLfloat mat_specular[] = { 1.0f, 1.0f, 0.8f, 1.0f };
-	GLfloat mat_shininess[] = { 100.0f };
+	// Material properties for the lips
+	GLfloat mat_ambient[] = { 0.5f, 0.05f, 0.05f, 1.0f };
+	GLfloat mat_diffuse[] = { 0.8f, 0.1f, 0.15f, 1.0f };
+	GLfloat mat_specular[] = { 0.2f, 0.1f, 0.1f, 1.0f };
+	GLfloat mat_shininess[] = { 20.0f };
 
 	glMaterialfv(GL_FRONT, GL_AMBIENT, mat_ambient);
 	glMaterialfv(GL_FRONT, GL_DIFFUSE, mat_diffuse);
 	glMaterialfv(GL_FRONT, GL_SPECULAR, mat_specular);
 	glMaterialfv(GL_FRONT, GL_SHININESS, mat_shininess);
 
-	glPushMatrix(); // Start of the entire head group
+	// The colour is set by the material's diffuse property
+	glColor3f(0.8f, 0.1f, 0.15f);
+
+	glPushMatrix();
+
+	// --- CHANGE: Adjusted the Y-coordinates to close the gap ---
+
+	// Define the 2D profile for the upper lip (moved down)
+	std::vector<std::pair<float, float>> upper_lip_profile = {
+		{-0.08f, 0.005f}, // Was 0.015f
+		{-0.05f, 0.025f}, // Was 0.035f
+		{ 0.00f, 0.015f}, // Was 0.025f
+		{ 0.05f, 0.025f}, // Was 0.035f
+		{ 0.08f, 0.005f}  // Was 0.015f
+	};
+
+	// Define the 2D profile for the lower lip (moved up)
+	std::vector<std::pair<float, float>> lower_lip_profile = {
+		{-0.07f, -0.005f}, // Was -0.010f
+		{-0.04f, -0.025f}, // Was -0.030f
+		{ 0.00f, -0.030f}, // Was -0.035f
+		{ 0.04f, -0.025f}, // Was -0.030f
+		{ 0.07f, -0.005f}  // Was -0.010f
+	};
+
+	float lip_depth = 0.04f;
+	drawLipShape(upper_lip_profile, lip_depth);
+	drawLipShape(lower_lip_profile, lip_depth);
+
+	glPopMatrix();
+}
+
+void drawFace()
+{
+	// Define the golden material properties that the head SHOULD have
+	GLfloat head_mat_ambient[] = { 0.55f, 0.38f, 0.1f, 1.0f };
+	GLfloat head_mat_diffuse[] = { 1.0f, 0.84f, 0.0f, 1.0f };
+	GLfloat head_mat_specular[] = { 1.0f, 1.0f, 0.8f, 1.0f };
+	GLfloat head_mat_shininess[] = { 128.0f };
+
+	// --- Start of Head Group ---
+	glPushMatrix();
 	glTranslatef(0.0f, 1.18f, 0.0f);
 
-	// --- Add the Helmet Visor ---
+	// 1. Draw Visor (uses its own gold material)
+	glMaterialfv(GL_FRONT, GL_AMBIENT, head_mat_ambient);
+	glMaterialfv(GL_FRONT, GL_DIFFUSE, head_mat_diffuse);
+	glMaterialfv(GL_FRONT, GL_SPECULAR, head_mat_specular);
+	glMaterialfv(GL_FRONT, GL_SHININESS, head_mat_shininess);
+
 	glPushMatrix();
 	glTranslatef(0.0f, 0.20f, 0.28f);
 	drawHelmetVisor();
 	glPopMatrix();
 
-	// --- Main Head Shape ---
+	// 2. Draw Lips (uses red material)
+	glPushAttrib(GL_LIGHTING_BIT);
+	glPushMatrix();
+
+	// --- STEP 2: LOWER THE LIPS ONTO THE NEW CHIN ---
+	// Now that the head is taller, you can use a negative Y value to place the lips lower.
+	// You can adjust this value to get the exact position you want.
+	glTranslatef(0.0f, -0.1f, 0.28f); // Changed Y from 0.00001f to -0.1f
+
+	drawLips();
+	glPopMatrix();
+	glPopAttrib();
+
+
+	// Re-apply the golden material to be safe
+	glMaterialfv(GL_FRONT, GL_AMBIENT, head_mat_ambient);
+	glMaterialfv(GL_FRONT, GL_DIFFUSE, head_mat_diffuse);
+	glMaterialfv(GL_FRONT, GL_SPECULAR, head_mat_specular);
+	glMaterialfv(GL_FRONT, GL_SHININESS, head_mat_shininess);
+	glColor3f(1.0f, 1.0f, 1.0f);
+
+
+	// 3. Draw Main Head Shape
 	int latitudes = 15;
 	int longitudes = 20;
-	float head_height = 0.5f;
+
+	// --- STEP 1: MAKE THE HEAD TALLER ---
+	// By increasing head_height, you stretch the head vertically, creating a chin.
+	float head_height = 0.6f; // <<< CHANGED from 0.5f to 0.6f
 	float head_max_radius = 0.28f;
 	float head_base_radius = 0.10f;
 
@@ -1901,6 +2017,8 @@ void drawFace()
 		}
 		glEnd();
 	}
+
+	// 4. Draw Ears
 	drawEars();
 
 	glPopMatrix(); // End of the entire head group
@@ -2049,18 +2167,17 @@ void drawLegs()
 		glRotatef(5.0f, 1.0f, 0.0f, 0.0f); // Static rotation for foot angle
 		glPushMatrix();
 		{
-			// --- NEW: Enable texturing and bind shoe texture for the foot ---
 			glEnable(GL_TEXTURE_2D);
-			glBindTexture(GL_TEXTURE_2D, g_shoeTextureID); // Bind the shoe texture
-			glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE); // Combine texture with material lighting
+			glBindTexture(GL_TEXTURE_2D, g_shoeTextureID);
+			glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 
 			float v[10][3] = {
-				{-0.12f, 0.0f,   0.14f}, {0.12f, 0.0f,   0.14f},    // 0,1: Top front
-				{0.12f, 0.0f, -0.25f}, {-0.12f, 0.0f, -0.25f},    // 2,3: Top back
-				{-0.12f, -0.15f,  0.14f}, {0.12f, -0.15f,  0.14f},  // 4,5: Bottom front
-				{0.12f, -0.15f, -0.25f}, {-0.12f, -0.15f, -0.25f},  // 6,7: Bottom back
-				{0.0f, -0.15f, 0.4f},                             // 8: Front point
-				{0.0f, -0.15f, -0.4f}                              // 9: Back point
+				{-0.12f, 0.0f,    0.14f}, {0.12f, 0.0f,    0.14f},
+				{0.12f, 0.0f, -0.25f}, {-0.12f, 0.0f, -0.25f},
+				{-0.12f, -0.15f,  0.14f}, {0.12f, -0.15f,  0.14f},
+				{0.12f, -0.15f, -0.25f}, {-0.12f, -0.15f, -0.25f},
+				{0.0f, -0.15f, 0.4f},
+				{0.0f, -0.15f, -0.4f}
 			};
 
 			glBegin(GL_QUADS);
@@ -2070,28 +2187,24 @@ void drawLegs()
 			glTexCoord2f(1.0f, 1.0f); glVertex3fv(v[1]);
 			glTexCoord2f(1.0f, 0.0f); glVertex3fv(v[2]);
 			glTexCoord2f(0.0f, 0.0f); glVertex3fv(v[3]);
-
 			// Bottom face
 			glNormal3f(0.0, -1.0, 0.0);
 			glTexCoord2f(0.0f, 1.0f); glVertex3fv(v[4]);
 			glTexCoord2f(0.0f, 0.0f); glVertex3fv(v[7]);
 			glTexCoord2f(1.0f, 0.0f); glVertex3fv(v[6]);
 			glTexCoord2f(1.0f, 1.0f); glVertex3fv(v[5]);
-
 			// Back face
 			glNormal3f(0.0, 0.0, -1.0);
 			glTexCoord2f(0.0f, 1.0f); glVertex3fv(v[3]);
 			glTexCoord2f(1.0f, 1.0f); glVertex3fv(v[2]);
 			glTexCoord2f(1.0f, 0.0f); glVertex3fv(v[6]);
 			glTexCoord2f(0.0f, 0.0f); glVertex3fv(v[7]);
-
 			// Left face
 			glNormal3f(-1.0, 0.0, 0.0);
 			glTexCoord2f(0.0f, 1.0f); glVertex3fv(v[0]);
 			glTexCoord2f(1.0f, 1.0f); glVertex3fv(v[3]);
 			glTexCoord2f(1.0f, 0.0f); glVertex3fv(v[7]);
 			glTexCoord2f(0.0f, 0.0f); glVertex3fv(v[4]);
-
 			// Right face
 			glNormal3f(1.0, 0.0, 0.0);
 			glTexCoord2f(0.0f, 1.0f); glVertex3fv(v[1]);
@@ -2099,63 +2212,62 @@ void drawLegs()
 			glTexCoord2f(1.0f, 0.0f); glVertex3fv(v[6]);
 			glTexCoord2f(0.0f, 0.0f); glVertex3fv(v[5]);
 			glEnd();
-
 			glBegin(GL_TRIANGLES);
-			// Front face (connecting to the point)
+			// Front face
 			glNormal3f(0.0, 0.0, 1.0);
 			glTexCoord2f(0.0f, 0.0f); glVertex3fv(v[0]);
 			glTexCoord2f(1.0f, 0.0f); glVertex3fv(v[1]);
-			glTexCoord2f(0.5f, 1.0f); glVertex3f(0.0, 0.0, 0.25); // Top center front point
-
-			// These are the side triangles for the front extension (point 8)
-			glNormal3f(0.7, -0.3, 0.7); // Adjust normal as needed
+			glTexCoord2f(0.5f, 1.0f); glVertex3f(0.0, 0.0, 0.25);
+			// Side triangles front
+			glNormal3f(0.7, -0.3, 0.7);
 			glTexCoord2f(0.0f, 0.0f); glVertex3fv(v[1]);
-			glTexCoord2f(1.0f, 0.5f); glVertex3fv(v[8]); // Point 8
+			glTexCoord2f(1.0f, 0.5f); glVertex3fv(v[8]);
 			glTexCoord2f(1.0f, 0.0f); glVertex3fv(v[5]);
-
-			glNormal3f(-0.7, -0.3, 0.7); // Adjust normal as needed
+			glNormal3f(-0.7, -0.3, 0.7);
 			glTexCoord2f(1.0f, 0.0f); glVertex3fv(v[0]);
 			glTexCoord2f(0.0f, 0.0f); glVertex3fv(v[4]);
-			glTexCoord2f(0.0f, 0.5f); glVertex3fv(v[8]); // Point 8
-
-			// These are the side triangles for the back extension (point 9)
-			glNormal3f(0.7, -0.3, -0.7); // Adjust normal as needed
+			glTexCoord2f(0.0f, 0.5f); glVertex3fv(v[8]);
+			// Side triangles back
+			glNormal3f(0.7, -0.3, -0.7);
 			glTexCoord2f(0.0f, 0.0f); glVertex3fv(v[2]);
 			glTexCoord2f(1.0f, 0.5f); glVertex3fv(v[6]);
-			glTexCoord2f(1.0f, 0.0f); glVertex3fv(v[9]); // Point 9
-
-			glNormal3f(-0.7, -0.3, -0.7); // Adjust normal as needed
+			glTexCoord2f(1.0f, 0.0f); glVertex3fv(v[9]);
+			glNormal3f(-0.7, -0.3, -0.7);
 			glTexCoord2f(1.0f, 0.0f); glVertex3fv(v[3]);
-			glTexCoord2f(0.0f, 0.0f); glVertex3fv(v[9]); // Point 9
+			glTexCoord2f(0.0f, 0.0f); glVertex3fv(v[9]);
 			glTexCoord2f(0.0f, 0.5f); glVertex3fv(v[7]);
 			glEnd();
-
-			// --- NEW: Disable texturing after drawing the foot ---
 			glDisable(GL_TEXTURE_2D);
 		}
 		glPopMatrix();
-
-		glPopMatrix(); // Restore to the hip joint state
+		glPopMatrix();
 		};
 
 	// --- Animation Calculation ---
-	const float WALK_SPEED = 5.0f;
-	const float HIP_SWING_AMPLITUDE = 40.0f;
-	const float KNEE_BEND_AMPLITUDE = 70.0f;
-
 	float rightHipAngle = 0.0f;
 	float rightKneeAngle = 0.0f;
+	float leftHipAngle = 0.0f;
+	float leftKneeAngle = 0.0f;
 
-	if (g_walkDirection != 0) {
-		rightHipAngle = sin(g_animationTime * WALK_SPEED) * HIP_SWING_AMPLITUDE * g_walkDirection;
-		// Knee bends when the leg is moving forward
-		rightKneeAngle = max(0.0f, sin(g_animationTime * WALK_SPEED) * g_walkDirection) * KNEE_BEND_AMPLITUDE;
+	// Determine the direction the legs should swing for the animation
+	float swingDirection = (float)g_forwardDirection;
+	if (g_forwardDirection == 0 && g_strafeDirection != 0) {
+		swingDirection = 1.0f; // Default to a forward swing animation when strafing
 	}
 
-	// Left leg is in the opposite phase of the right leg
-	float leftHipAngle = -rightHipAngle;
-	float leftKneeAngle = max(0.0f, sin(g_animationTime * WALK_SPEED + 3.14159f) * g_walkDirection) * KNEE_BEND_AMPLITUDE;
+	if (swingDirection != 0.0f || (g_strafeDirection != 0 && g_forwardDirection == 0)) {
+		const float WALK_SPEED = 5.0f;
+		const float HIP_SWING_AMPLITUDE = 40.0f;
+		const float KNEE_BEND_AMPLITUDE = 70.0f;
 
+		float animationDriver = (swingDirection != 0.0f) ? swingDirection : 1.0f;
+
+		rightHipAngle = sin(g_animationTime * WALK_SPEED) * HIP_SWING_AMPLITUDE * animationDriver;
+		rightKneeAngle = max(0.0f, sin(g_animationTime * WALK_SPEED) * animationDriver) * KNEE_BEND_AMPLITUDE;
+
+		leftHipAngle = -rightHipAngle;
+		leftKneeAngle = max(0.0f, sin(g_animationTime * WALK_SPEED + 3.14159f) * animationDriver) * KNEE_BEND_AMPLITUDE;
+	}
 
 	// --- Draw Left Leg ---
 	glPushMatrix();
@@ -2571,22 +2683,32 @@ void updateWavingAnimation(float deltaTime) {
 void display(float deltaTime)
 {
 	// --- Animation Updates ---
-	if (g_walkDirection != 0)
+	if (g_forwardDirection != 0 || g_strafeDirection != 0)
 	{
-		// Accumulate time for the leg swing animation
-		g_animationTime += deltaTime;
+		// 1. Determine Character's Facing Direction
+		if (g_forwardDirection == 1) { // Pressing UP
+			g_characterRotationY = 0.0f;
+		}
+		else if (g_forwardDirection == -1) { // Pressing DOWN
+			g_characterRotationY = 180.0f;
+		}
+		else if (g_strafeDirection == -1) { // Pressing LEFT
+			g_characterRotationY = 270.0f; // FIX: Face left. Was 90.0f
+		}
+		else if (g_strafeDirection == 1) { // Pressing RIGHT
+			g_characterRotationY = 90.0f;  // FIX: Face right. Was 270.0f
+		}
 
-		// Define character movement speed
-		const float MOVE_SPEED = 2.0f; // Units per second
+		// 2. Update Character's Position in the World
+		const float MOVE_SPEED = 2.0f;
+		g_animationTime += deltaTime; // Animate legs while moving
 
-		// Calculate movement direction based on the current camera rotation (rotateY)
-		float angleRad = rotateY * (3.14159f / 180.0f); // Convert viewing angle to radians
-
-		// Update character's X and Z position
-		g_characterPosX -= sin(angleRad) * g_walkDirection * MOVE_SPEED * deltaTime;
-		g_characterPosZ -= cos(angleRad) * g_walkDirection * MOVE_SPEED * deltaTime;
+		g_characterPosZ -= g_forwardDirection * MOVE_SPEED * deltaTime;
+		// FIX: Reversed the strafe direction by changing '+=' to '-='
+		g_characterPosX -= g_strafeDirection * MOVE_SPEED * deltaTime;
 	}
 
+	// Other animations
 	updateHandAnimation(deltaTime);
 	updateNuwaSkill(deltaTime);
 	updateArmCastingAnimation(deltaTime);
@@ -2608,17 +2730,14 @@ void display(float deltaTime)
 	}
 
 	g_braidTime += deltaTime;
-
 	float animation_speed = 0.09f;
 	g_rainbow_offset += animation_speed * deltaTime;
-
 
 	// --- Rendering Starts Here ---
 	glClearColor(1.0, 1.0, 1.0, 0.0);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	drawSkyBackground(800, 600);
-
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_LIGHTING);
 	glEnable(GL_LIGHT0);
@@ -2627,12 +2746,11 @@ void display(float deltaTime)
 	glEnable(GL_NORMALIZE);
 
 	glLightfv(GL_LIGHT0, GL_POSITION, g_animatedLightPos);
-	GLfloat ambient_light[] = { 0.5f, 0.5f, 0.5f, 1.0f };
+	GLfloat ambient_light[] = { 0.2f, 0.2f, 0.2f, 1.0f };
 	glLightModelfv(GL_LIGHT_MODEL_AMBIENT, ambient_light);
-
 	glEnable(GL_LIGHT1);
 	GLfloat light1_pos[] = { 0.0f, 2.0f, 5.0f, 1.0f };
-	GLfloat light1_diffuse[] = { 0.4f, 0.4f, 0.4f, 1.0f };
+	GLfloat light1_diffuse[] = { 0.3f, 0.3f, 0.3f, 1.0f };
 	GLfloat light1_specular[] = { 0.0f, 0.0f, 0.0f, 1.0f };
 	glLightfv(GL_LIGHT1, GL_POSITION, light1_pos);
 	glLightfv(GL_LIGHT1, GL_DIFFUSE, light1_diffuse);
@@ -2645,22 +2763,22 @@ void display(float deltaTime)
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 
-	// --- CAMERA AND CHARACTER TRANSFORMATION ---
-	// 1. Apply camera transformations (zoom and rotation around the character)
+	// 1. Apply camera transformations (mouse-controlled orbit)
 	glTranslatef(0.0f, -0.5f, zoomFactor);
 	glRotatef(rotateX, 1.0f, 0.0f, 0.0f);
 	glRotatef(rotateY, 0.0f, 1.0f, 0.0f);
 
-	// 2. Apply the character's world position. This effectively makes the camera
-	//    "follow" the character as it moves.
+	// 2. Move to the character's position in the world
 	glTranslatef(-g_characterPosX, 0.0f, -g_characterPosZ);
 
+	// 3. Apply the character's own rotation to make it face the correct direction
+	glRotatef(g_characterRotationY, 0.0f, 1.0f, 0.0f);
 
 	// --- Drawing Calls for the Character ---
 	drawSmoothChest();
 	drawWaistWithVerticalLines();
 	drawSmoothLowerBodyAndSkirt();
-	drawLegs(); // This will now draw the animated legs at the new position
+	drawLegs();
 
 	glEnable(GL_POLYGON_OFFSET_FILL);
 	glPolygonOffset(-1.0f, -1.0f);
