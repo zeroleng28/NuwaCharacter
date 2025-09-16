@@ -111,6 +111,38 @@ const float PEACE_THUMB_ANGLE = -60.0f;
 int g_handPoseTarget = 0;        // 0 = Normal, 1 = Peace Sign
 float g_handPoseProgress = 0.0f; // Animation progress (0=normal, 1=peace sign)
 
+bool g_isLevitating = false;
+float g_levitationProgress = 0.0f;  
+float g_characterYOffset = 0.0f;   
+float g_torsoTiltAngle = 0.0f;     
+float g_neckTiltAngle = 0.0f;      
+const float ARM_POSE_LEVITATE[3] = { -45.0f, -20.0f, -15.0f };
+
+// --- ADD THIS NEAR THE TOP WITH OTHER GLOBAL VARIABLES ---
+
+// Defines the animation states of the skill block
+enum MatrixBlockState {
+	SPAWNING,  // The block is just appearing
+	EXPANDING, // The block is growing to its full size
+	ACTIVE     // The block is at full size, waiting to expire
+};
+
+// Holds all the data for one instance of Nuwa's matrix skill
+struct MatrixBlock {
+	bool isActive = false;          // Is this block currently in use?
+	MatrixBlockState state;         // Its current animation state
+
+	float posX, posY, posZ;         // World position
+	float scaleX, scaleY, scaleZ;   // Current scale for the expansion animation
+
+	float lifetime;                 // How many seconds are left before it disappears
+	float animationTimer;           // A timer for the current state (e.g., how long it's been expanding)
+};
+
+// This vector will hold all the blocks currently on screen
+std::vector<MatrixBlock> g_matrixBlocks;
+GLuint g_matrixTextureID = 0; // We'll need a new texture for the block
+
 void resetAnimation() {
 	g_isHaloAnimating = false;
 	g_isHaloVisible = true;
@@ -163,10 +195,16 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 
 		// --- Cast Nuwa Skill ---
 		if (wParam == 'G') {
-			// --- MODIFIED: Start the ARM ANIMATION, not the skill directly ---
-			if (g_armAnimationState == 0) { // Only start if we are in idle state
-				g_armAnimationState = 1; // Set state to "Windup"
-				g_armAnimationTimer = 0.0f; // Reset the timer
+			if (g_armAnimationState == 0) {
+				g_armAnimationState = 1;
+				g_armAnimationTimer = 0.0f;
+
+				g_isNuwaSkillActive = true;
+				g_nuwaSkillLifetime = 3.0f;
+				g_nuwaSkillDistance = 0.0f;
+				g_characterAngleOnCast = rotateY;
+				g_characterCastPosX = g_characterPosX;
+				g_characterCastPosZ = g_characterPosZ;
 			}
 		}
 
@@ -195,6 +233,46 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 			g_handPoseTarget = 0; 
 			g_handPoseProgress = 0.0f; 
 			g_isWeaponVisible = false;
+		}
+
+		if (wParam == 'M') {
+			if (g_armAnimationState == 0) {
+				g_armAnimationState = 1;
+				g_armAnimationTimer = 0.0f;
+
+				MatrixBlock newBlock;
+				newBlock.isActive = true;
+				newBlock.lifetime = 4.0f;
+				newBlock.state = SPAWNING;
+				newBlock.animationTimer = 0.0f;
+				newBlock.scaleX = newBlock.scaleY = newBlock.scaleZ = 0.1f;
+
+				const float spawnAreaSize = 15.0f;
+				float halfArea = spawnAreaSize / 2.0f;
+				float offsetX = -halfArea + static_cast<float>(rand()) / (static_cast<float>(RAND_MAX / spawnAreaSize));
+				float offsetZ = -halfArea + static_cast<float>(rand()) / (static_cast<float>(RAND_MAX / spawnAreaSize));
+
+				newBlock.posX = g_characterPosX + offsetX;
+				newBlock.posZ = g_characterPosZ + offsetZ;
+				newBlock.posY = 1.0f;
+
+				g_matrixBlocks.push_back(newBlock);
+			}
+			break;
+		}
+		if (wParam == 'L') {
+			g_isLevitating = !g_isLevitating; // 切换漂浮状态
+		}
+		// --- END OF ADDITION ---
+
+		if (wParam == VK_SPACE) {
+			resetAnimation();
+			g_isLeftWaveActive = false;
+			g_isRightWaveActive = false;
+			g_handPoseTarget = 0;
+			g_handPoseProgress = 0.0f;
+			g_isWeaponVisible = false;
+			g_isLevitating = false; 
 		}
 		break;
 
@@ -2175,19 +2253,14 @@ void updateArmCastingAnimation(float deltaTime)
 		// We'll set a default progress that represents this slight curl.
 		break;
 
-	case 1: // Windup: Raising arms, and opening fists from idle curl
+	case 1: // Windup: Raising arms
 		armProgress = g_armAnimationTimer / DURATION_WINDUP;
 		if (armProgress >= 1.0f) {
 			armProgress = 1.0f;
-			g_armAnimationState = 2;
+			g_armAnimationState = 2; // 直接进入下一个动画状态
 			g_armAnimationTimer = 0.0f;
 
-			g_isNuwaSkillActive = true; // Skill fires here
-			g_nuwaSkillLifetime = 3.0f;
-			g_nuwaSkillDistance = 0.0f;
-			g_characterAngleOnCast = rotateY;
-			g_characterCastPosX = g_characterPosX;
-			g_characterCastPosZ = g_characterPosZ;
+			// --- SKILL CASTING LOGIC REMOVED FROM HERE ---
 		}
 
 		// NEW: Hand animation during windup (from idle curl -> open)
@@ -2277,6 +2350,98 @@ void updateHandPoseAnimation(float deltaTime)
 	}
 }
 
+void drawSingleMatrixBlock(const MatrixBlock& block) {
+	glPushMatrix();
+	// Save current OpenGL state
+	glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_DEPTH_BUFFER_BIT);
+
+	// --- Set up for a glowing, transparent effect ---
+	glEnable(GL_BLEND);
+	// Additive blending: makes colours brighter where they overlap. Great for magic!
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+	glDisable(GL_LIGHTING);   // Glow effects shouldn't be affected by world lighting
+	glDepthMask(GL_FALSE);    // Don't hide other transparent objects behind this one
+
+	// --- Position and scale the block ---
+	glTranslatef(block.posX, block.posY, block.posZ);
+	glScalef(block.scaleX, block.scaleY, block.scaleZ);
+
+	// --- Apply the texture ---
+	glEnable(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, g_matrixTextureID);
+	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+
+	// Draw the cuboid with a glowing colour tint
+	// The alpha (0.7f) controls the transparency for the blend function
+	glColor4f(0.8f, 0.9f, 1.0f, 0.7f);
+	drawCuboid(1.0f, 1.0f, 1.0f); // Draw a 1x1x1 cube, which will be scaled
+
+	// --- Restore OpenGL state ---
+	glPopAttrib();
+	glPopMatrix();
+}
+
+void updateMatrixBlocks(float deltaTime) {
+	const float SPAWN_DURATION = 0.1f;
+	const float EXPAND_DURATION = 0.5f; // How long it takes to expand
+	// --- MODIFIED HERE ---
+	const float CUBE_SIDE_LENGTH = 2.0f; // Define a single size for the cube
+	const float FULL_SIZE_X = CUBE_SIDE_LENGTH;
+	const float FULL_SIZE_Y = CUBE_SIDE_LENGTH; // Make the height the same as the width
+	const float FULL_SIZE_Z = CUBE_SIDE_LENGTH;
+
+	// Loop through all blocks (use an iterator to allow for easy removal if needed)
+	for (auto& block : g_matrixBlocks) {
+		if (!block.isActive) {
+			continue;
+		}
+
+		// Decrease lifetime
+		block.lifetime -= deltaTime;
+		if (block.lifetime <= 0.0f) {
+			block.isActive = false; // Deactivate when time runs out
+			continue;
+		}
+
+		block.animationTimer += deltaTime;
+
+		// --- State Machine for Animation ---
+		switch (block.state) {
+		case SPAWNING:
+			// Just wait for a very short time before expanding
+			if (block.animationTimer >= SPAWN_DURATION) {
+				block.state = EXPANDING;
+				block.animationTimer = 0.0f; // Reset timer for the next state
+			}
+			break;
+
+		case EXPANDING:
+			// Interpolate scale from small to full size over EXPAND_DURATION
+			float progress = block.animationTimer / EXPAND_DURATION;
+			if (progress > 1.0f) progress = 1.0f;
+
+			block.scaleX = FULL_SIZE_X * progress;
+			block.scaleY = FULL_SIZE_Y * progress;
+			block.scaleZ = FULL_SIZE_Z * progress;
+
+			if (progress >= 1.0f) {
+				block.state = ACTIVE; // Expansion finished
+				block.animationTimer = 0.0f;
+			}
+			break;
+		}
+	}
+}
+
+// A helper function to draw all active blocks
+void drawMatrixBlocks() {
+	for (const auto& block : g_matrixBlocks) {
+		if (block.isActive) {
+			drawSingleMatrixBlock(block);
+		}
+	}
+}
+
 void display(float deltaTime)
 {
 	// --- Animation Updates ---
@@ -2301,6 +2466,7 @@ void display(float deltaTime)
 	updateArmCastingAnimation(deltaTime);
 	updateWaveAnimation(deltaTime);
 	updateHandPoseAnimation(deltaTime);
+	updateMatrixBlocks(deltaTime);
 
 	if (g_isHaloAnimating) {
 		const float HALO_MOVE_SPEED = 5.0f;
@@ -2387,6 +2553,7 @@ void display(float deltaTime)
 	drawHalo();
 	glPopMatrix();
 	drawNuwaSkill();
+	drawMatrixBlocks();
 
 	glDisable(GL_TEXTURE_2D);
 
@@ -2481,6 +2648,12 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow)
 	g_orangeTextureID = loadTextureBMP("Textures/Orange.bmp");
 	if (g_orangeTextureID == 0) {
 		MessageBox(hWnd, "Could not load Textures/Orange.bmp. Make sure the file is in the Textures folder.", "Texture Error", MB_OK | MB_ICONERROR);
+		return -1;
+	}
+
+	g_matrixTextureID = loadTextureBMP("Textures/Matrix.bmp");
+	if (g_matrixTextureID == 0) {
+		MessageBox(hWnd, "Could not load Textures/Matrix.bmp.", "Texture Error", MB_OK | MB_ICONERROR);
 		return -1;
 	}
 
