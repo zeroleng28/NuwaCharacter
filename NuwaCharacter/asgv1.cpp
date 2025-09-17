@@ -185,8 +185,8 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 		// --- Handle Arrow Key Presses to START movement ---
 		if (wParam == VK_UP)    g_forwardDirection = 1;
 		if (wParam == VK_DOWN)  g_forwardDirection = -1;
-		if (wParam == VK_LEFT)  g_strafeDirection = -1;
-		if (wParam == VK_RIGHT) g_strafeDirection = 1;
+		if (wParam == VK_RIGHT)  g_strafeDirection = -1;
+		if (wParam == VK_LEFT) g_strafeDirection = 1;
 
 		// --- NEW: Add Light Position Controls ---
 		if (wParam == 'W') g_animatedLightPos[1] += 0.5f; // Move light up
@@ -266,9 +266,6 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 		if (wParam == 'L') {
 			g_isLevitating = !g_isLevitating;
 		}
-		if (wParam == 'Q') g_isLeftWaveActive = !g_isLeftWaveActive;
-		if (wParam == 'E') g_isRightWaveActive = !g_isRightWaveActive;
-		if (wParam == 'V') g_handPoseTarget = (g_handPoseTarget == 0) ? 1 : 0;
 		if (wParam == 'H') g_isWeaponVisible = !g_isWeaponVisible;
 		if (wParam == VK_SPACE) {
 			resetAnimation();
@@ -285,8 +282,8 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 		// --- Handle Key Releases to STOP movement ---
 		if (wParam == VK_UP && g_forwardDirection == 1)    g_forwardDirection = 0;
 		if (wParam == VK_DOWN && g_forwardDirection == -1)  g_forwardDirection = 0;
-		if (wParam == VK_LEFT && g_strafeDirection == -1)  g_strafeDirection = 0;
-		if (wParam == VK_RIGHT && g_strafeDirection == 1) g_strafeDirection = 0;
+		if (wParam == VK_RIGHT && g_strafeDirection == -1)  g_strafeDirection = 0;
+		if (wParam == VK_LEFT && g_strafeDirection == 1) g_strafeDirection = 0;
 		break;
 
 	case WM_LBUTTONDOWN:
