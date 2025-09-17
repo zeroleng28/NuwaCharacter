@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <time.h> 
 
+#pragma comment (lib, "winmm.lib")
 #pragma comment (lib, "OpenGL32.lib")
 #pragma comment (lib, "GLU32.lib")
 
@@ -2932,6 +2933,30 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow)
 	QueryPerformanceFrequency(&g_timer_frequency);
 	QueryPerformanceCounter(&g_last_frame_time);
 
+	DWORD mciError;
+	char errorText[256];
+
+	// 1. Attempt to open the music file
+	mciError = mciSendString("open \"NuwaMusic.mp3\" type mpegvideo alias bgm", NULL, 0, NULL);
+	if (mciError != 0) // If there was an error...
+	{
+		// Get the human-readable error message
+		mciGetErrorString(mciError, errorText, sizeof(errorText));
+		// Display it in a message box
+		MessageBox(NULL, errorText, "MCI Open Error", MB_OK | MB_ICONERROR);
+		return -1; // Exit the programme because music failed to load
+	}
+
+	// 2. Attempt to play the music
+	mciError = mciSendString("play bgm repeat", NULL, 0, NULL);
+	if (mciError != 0) // If there was an error...
+	{
+		mciGetErrorString(mciError, errorText, sizeof(errorText));
+		MessageBox(NULL, errorText, "MCI Play Error", MB_OK | MB_ICONERROR);
+		mciSendString("close bgm", NULL, 0, NULL); // Clean up
+		return -1; // Exit
+	}
+
 	// --- Message Loop ---
 	MSG msg;
 	ZeroMemory(&msg, sizeof(msg));
@@ -2955,6 +2980,8 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmdShow)
 		display(deltaTime);
 		// Note: SwapBuffers is now called inside display() in the particle system version
 	}
+
+	mciSendString("close bgm", NULL, 0, NULL);
 
 	// --- Cleanup ---
 	wglMakeCurrent(NULL, NULL);
