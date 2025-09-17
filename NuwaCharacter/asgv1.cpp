@@ -87,6 +87,8 @@ float rotateX = 15.0f;
 float rotateY = 0.0f;
 float zoomFactor = -5.0f; // Global variable for camera zoom
 
+bool g_isPerspectiveView = true;
+
 // These variables will help us track the mouse movement.
 bool isDragging = false;
 int lastMouseX = 0;
@@ -181,6 +183,9 @@ LRESULT WINAPI WindowProcedure(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 	case WM_KEYDOWN:
 		// Exit the application
 		if (wParam == VK_ESCAPE) PostQuitMessage(0);
+		if (wParam == 'P') {
+			g_isPerspectiveView = !g_isPerspectiveView;
+		}
 
 		// --- Handle Arrow Key Presses to START movement ---
 		if (wParam == VK_UP)    g_forwardDirection = 1;
@@ -2755,7 +2760,23 @@ void display(float deltaTime)
 
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
-	gluPerspective(45.0, 800.0 / 600.0, 1.0, 100.0);
+	float aspectRatio = 800.0f / 600.0f;
+	if (g_isPerspectiveView)
+	{
+		gluPerspective(45.0, aspectRatio, 1.0, 100.0);
+	}
+	else
+	{
+		float orthoSize = 5.0f;
+		glOrtho(
+			-orthoSize * aspectRatio, // left
+			orthoSize * aspectRatio, // right
+			-orthoSize,               // bottom
+			orthoSize,               // top
+			-100.0,                   // near
+			100.0                    // far
+		);
+	}
 
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
